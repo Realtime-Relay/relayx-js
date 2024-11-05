@@ -21,7 +21,7 @@ export class Realtime {
     }
 
     async #getNameSpace() {
-        var response = await axios.get("http://127.0.0.1:3000/get-namespace",{
+        var response = await axios.get("http://128.199.176.185:3000/get-namespace",{
             method: "GET",
             headers: {
                 "Authorization": `Bearer ${this.api_key}`
@@ -38,7 +38,7 @@ export class Realtime {
     }
 
     connect(){
-        this.SEVER_URL = `http://127.0.0.1:3000/${this.namespace}`; 
+        this.SEVER_URL = `http://128.199.176.185:3000/${this.namespace}`; 
 
         this.socket = io(this.SEVER_URL, {
             transports: [ "websocket", "polling" ],
@@ -72,11 +72,17 @@ export class Realtime {
                 this.#event_func[room](event);
             }
         });
+
+        this.socket.on("reconnect_attempt", (attempt) => {
+            console.log("[RECON_ATTEMPT] => " + attempt);
+        });
         
         this.socket.on("disconnect", (reason, details) => {
             if (this.socket.active) {
                 // temporary disconnection, the socket will automatically try to reconnect
                 console.log("Disconnected, will reconnect"); 
+
+                this.socket.connect();
             } else {
                 // the connection was forcefully closed by the server or the client itself
                 // in that case, `socket.connect()` must be manually called in order to reconnect
@@ -126,12 +132,14 @@ export class Realtime {
     async publish(topic, data){
         if (topic !== null || topic !== undefined){
             // Are we connected to this room?
+            console.log(this.#topicMap)
             if (!this.#topicMap.includes(topic)){
                 // If not, connect and wait for an ack
                 var response = await this.socket.emitWithAck("enter-room", {
                     "room": topic
                 })
     
+                console.log(response)
                 if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED"){
                     this.#topicMap.push(response.room)
                 }
