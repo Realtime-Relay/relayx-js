@@ -1,11 +1,12 @@
 import { io } from "socket.io-client";
 import axios from 'axios';
+import * as wildcard from 'socketio-wildcard';
 
 export class Realtime {
 
     #event_func = {}; 
     #topicMap = []; 
-    roomKeyEvents = ["connect", "room-message", "room-join", "disconnect"]
+    roomKeyEvents = ["connect", "room-message", "room-join", "disconnect"];
 
     constructor(api_key){
         this.api_key = api_key;
@@ -38,6 +39,7 @@ export class Realtime {
     }
 
     connect(){
+        //128.199.176.185
         this.SEVER_URL = `http://128.199.176.185:3000/${this.namespace}`; 
 
         this.socket = io(this.SEVER_URL, {
@@ -52,7 +54,9 @@ export class Realtime {
 
             // Let's call the callback function if it exists
             if (CONNECTED in this.#event_func){
-                this.#event_func[CONNECTED]()
+                if (this.#event_func[CONNECTED] !== null || this.#event_func[CONNECTED] !== undefined){
+                    this.#event_func[CONNECTED]()
+                }
             }
         });
         
@@ -60,7 +64,9 @@ export class Realtime {
             var room = data.room; 
 
             if (room in this.#event_func){
-                this.#event_func[room](data.data)
+                if (this.#event_func[room] !== null || this.#event_func[room] !== undefined){
+                    this.#event_func[room](data.data)
+                }
             }
         });
 
@@ -73,25 +79,20 @@ export class Realtime {
             }
         });
 
+        this.socket.io.on("ping", async (cb) => {
+            console.log("PING");
+        });
+
         this.socket.on("reconnect_attempt", (attempt) => {
             console.log("[RECON_ATTEMPT] => " + attempt);
         });
         
         this.socket.on("disconnect", (reason, details) => {
-            if (this.socket.active) {
-                // temporary disconnection, the socket will automatically try to reconnect
-                console.log("Disconnected, will reconnect"); 
-
-                this.socket.connect();
-            } else {
-                // the connection was forcefully closed by the server or the client itself
-                // in that case, `socket.connect()` must be manually called in order to reconnect
-                console.log(reason, details);
-                console.log("Disconnected"); 
-        
-                // Removing all listeners
-                socket.removeAllListeners();
-            }
+            console.log(reason, details);
+            console.log("Disconnected"); 
+    
+            // Removing all listeners
+            this.socket.removeAllListeners();
         });
     }
 
@@ -131,8 +132,9 @@ export class Realtime {
 
     async publish(topic, data){
         if (topic !== null || topic !== undefined){
+            await this.#sleep(5);
+
             // Are we connected to this room?
-            console.log(this.#topicMap)
             if (!this.#topicMap.includes(topic)){
                 // If not, connect and wait for an ack
                 var response = await this.socket.emitWithAck("enter-room", {
@@ -152,10 +154,14 @@ export class Realtime {
             });
 
             return relayResponse;
-            
         }else{
             return null;
         }
+    }
+
+    // Utility functions
+    #sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
 
