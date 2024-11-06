@@ -1,6 +1,6 @@
 import { io } from "socket.io-client";
 import axios from 'axios';
-import * as wildcard from 'socketio-wildcard';
+import * as msgPackParser from 'socket.io-msgpack-parser';
 
 export class Realtime {
 
@@ -46,7 +46,8 @@ export class Realtime {
             transports: [ "websocket", "polling" ],
             extraHeaders: {
                 "api-key": this.api_key
-            }
+            },
+            parser: msgPackParser
         });
 
         this.socket.on("connect", () => {
