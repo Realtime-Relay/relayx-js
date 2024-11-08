@@ -152,7 +152,7 @@ export class Realtime {
             console.log("Disconnected"); 
     
             // Removing all listeners
-            this.socket.removeAllListeners();
+            // this.socket.removeAllListeners();
 
             // Let's call the callback function if it exists
             if (DISCONNECTED in this.#event_func){
