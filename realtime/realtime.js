@@ -16,7 +16,15 @@ export class Realtime {
         this.namespace = ""; 
     }
 
+    /*
+    Initialized library with configuration options. Gets namespace from REST API
+    */
     async init(staging, opts){
+        /**
+         * Method can take in 2 variables
+         * @param{boolean} staging - Sets URL to staging or production URL
+         * @param{Object} opts - Library configuration options
+         */
         var len = arguments.length;
 
         if (len > 2){
@@ -38,9 +46,11 @@ export class Realtime {
         }else if(len == 1){
             if(arguments[0] instanceof Object){
                 opts = arguments[0];
+                staging = false;
             }else{
                 opts = {};
                 staging = arguments[0];
+                console.log(staging)
             }
         }else{
             staging = false;
@@ -53,6 +63,9 @@ export class Realtime {
             this.baseUrl = "http://128.199.176.185:3000";
         }
 
+        console.log(this.baseUrl);
+        console.log(opts);
+
         this.opts = opts;
 
         if (this.api_key !== null || this.api_key !== undefined){
@@ -62,6 +75,10 @@ export class Realtime {
         }
     }
 
+    /**
+     * Gets the namespace of the user using a REST API
+     * @returns {string} namespace value. Null if failed to retreive
+     */
     async #getNameSpace() {
         var response = await axios.get(this.baseUrl + "/get-namespace",{
             method: "GET",
@@ -79,12 +96,14 @@ export class Realtime {
         }
     }
 
+    /**
+     * Connects to the websocket server
+     */
     connect(){
-        //128.199.176.185
         this.SEVER_URL = `${this.baseUrl}/${this.namespace}`; 
 
         this.socket = io(this.SEVER_URL, {
-            transports: [ "websocket", "polling" ],
+            transports: [ "websocket", "polling" ], // Transport by priority
             reconnectionDelayMax: 500,
             reconnection: true,
             extraHeaders: {
@@ -104,6 +123,10 @@ export class Realtime {
             }
         });
         
+        /**
+         * Listener to recieve messages from the server.
+         * Executes callback function if initialized by the user
+         */
         this.socket.on("room-message", (data) => {
             var room = data.room; 
 
@@ -117,6 +140,10 @@ export class Realtime {
             }
         });
 
+        /**
+         * Listener to recieve events of user joining or leaving.
+         * Executes callback function defined in on(), if initialized
+         */
         this.socket.on("room-join", (data) => {
             var room = data.room; 
             var event = data.event;
@@ -130,6 +157,11 @@ export class Realtime {
             console.log("PING");
         });
 
+        /**
+         * Executes once reconnection is established.
+         * Makes sure client joins all rooms it was previously
+         * connected to.
+         */
         this.socket.io.on("reconnect", (attempt) => {
             console.log("[RECONN] => Reconnected " + attempt);
 
@@ -139,14 +171,24 @@ export class Realtime {
             });
         });
 
+        /**
+         * Fires when reconnection attempt is made
+         */
         this.socket.io.on("reconnect_attempt", (attempt) => {
             console.log("[RECON_ATTEMPT] => " + attempt);
         });
 
+        /**
+         * Fires when reconnection attempt failed
+         */
         this.socket.io.on("reconnect_failed", () => {
             console.log("[RECONN_FAIL] => Reconnection failed");
         });
         
+        /**
+         * Fires when socket is disconnected from server.
+         * Also executes callback (if initialized) on user thread.
+         */
         this.socket.on("disconnect", (reason, details) => {
             console.log(reason, details);
             console.log("Disconnected"); 
@@ -163,12 +205,24 @@ export class Realtime {
         });
     }
 
+    /**
+     * Deletes reference to user defined event callback.
+     * This will "stop listening to an event"
+     * @param {string} topic 
+     */
     off(topic){
+        // TODO: Include logic to leave room
         if (this.#topicMap.includes(topic)){
             this.#topicMap.delete(topic); 
         }
     }
 
+    /**
+     * Subscribes to a topic by joining a room
+     * @param {string} topic - Name of the room
+     * @param {function} func - Callback function to call on user thread
+     * @returns {boolean} - To check if topic subscription was successful
+     */
     async on(topic, func){
         var subscribed = false; 
 
@@ -177,7 +231,6 @@ export class Realtime {
             if (topic !== null || topic !== undefined){
                 // Are we connected to this room?
                 subscribed = await this.#createOrJoinRoom(topic); 
-                console.log("SUBSCRIBED ON", subscribed); 
             }else{
                 subscribed = false; 
             }
@@ -194,6 +247,13 @@ export class Realtime {
         }
     }
 
+    /**
+     * A method to send a message to a topic.
+     * Retry methods included
+     * @param {string} topic - Name of the room
+     * @param {object} data - Data to send
+     * @returns 
+     */
     async publish(topic, data){
         console.log("PUBLISHING", topic);
         if (topic !== null || topic !== undefined){
@@ -201,7 +261,6 @@ export class Realtime {
 
             // Are we connected to this room?
             var subscribed = await this.#createOrJoinRoom(topic);
-            console.log("SUBSCRIBED", subscribed); 
 
             if(subscribed){
                 // We are now connected or we already were. Send message to room
@@ -262,6 +321,13 @@ export class Realtime {
     }
 
     // Room functions
+
+    /**
+     * Creates a room or joins one. Does not join if
+     * already part of one
+     * @param {string} topic - Name of the room 
+     * @returns {boolean} - True if joined successfully else false.
+     */
     async #createOrJoinRoom(topic){
         var subscribed = false; 
 
@@ -286,6 +352,11 @@ export class Realtime {
         return subscribed; 
     }
 
+    /**
+     * Rejoins room on reconnection
+     * @param {string} topic - Name of the room
+     * @returns {boolean} - True if rejoined successfully else false.
+     */
     async #rejoinRoom(topic){
         var subscribed = false; 
 
