@@ -62,6 +62,8 @@ export class Realtime {
             opts = {};
         }
 
+        this.staging = staging; 
+
         if (staging !== undefined || staging !== null){
             this.baseUrl = staging ? "http://127.0.0.1:3000" : "http://128.199.176.185:3000";
         }else{
@@ -73,7 +75,7 @@ export class Realtime {
 
         this.opts = opts;
 
-        if (this.api_key !== null || this.api_key !== undefined){
+        if (this.api_key !== null && this.api_key !== undefined){
             this.namespace = await this.#getNameSpace();
         }else{
             throw new Error("Undefined or null api key in constructor"); 
@@ -86,7 +88,6 @@ export class Realtime {
      */
     async #getNameSpace() {
         var response = await axios.get(this.baseUrl + "/get-namespace",{
-            method: "GET",
             headers: {
                 "Authorization": `Bearer ${this.api_key}`
             }
