@@ -16,7 +16,43 @@ export class Realtime {
         this.namespace = ""; 
     }
 
-    async init(opts){
+    async init(staging, opts){
+        var len = arguments.length;
+
+        if (len > 2){
+            new Error("Method takes only 2 variables, " + len + " given");
+        }
+
+        if (len == 2){
+            if(typeof arguments[0] == "boolean"){
+                staging = arguments[0]; 
+            }else{
+                staging = false;
+            }
+
+            if(arguments[1] instanceof Object){
+                opts = arguments[1];
+            }else{
+                opts = {};
+            }
+        }else if(len == 1){
+            if(arguments[0] instanceof Object){
+                opts = arguments[0];
+            }else{
+                opts = {};
+                staging = arguments[0];
+            }
+        }else{
+            staging = false;
+            opts = {};
+        }
+
+        if (staging !== undefined || staging !== null){
+            this.baseUrl = staging ? "http://127.0.0.1:3000" : "http://128.199.176.185:3000";
+        }else{
+            this.baseUrl = "http://128.199.176.185:3000";
+        }
+
         this.opts = opts;
 
         if (this.api_key !== null || this.api_key !== undefined){
@@ -27,7 +63,7 @@ export class Realtime {
     }
 
     async #getNameSpace() {
-        var response = await axios.get("http://128.199.176.185:3000/get-namespace",{
+        var response = await axios.get(this.baseUrl + "/get-namespace",{
             method: "GET",
             headers: {
                 "Authorization": `Bearer ${this.api_key}`
@@ -45,7 +81,7 @@ export class Realtime {
 
     connect(){
         //128.199.176.185
-        this.SEVER_URL = `http://128.199.176.185:3000/${this.namespace}`; 
+        this.SEVER_URL = `${this.baseUrl}/${this.namespace}`; 
 
         this.socket = io(this.SEVER_URL, {
             transports: [ "websocket", "polling" ],
@@ -73,7 +109,10 @@ export class Realtime {
 
             if (room in this.#event_func){
                 if (this.#event_func[room] !== null || this.#event_func[room] !== undefined){
-                    this.#event_func[room](data.data)
+                    this.#event_func[room]({
+                        "id": data.id,
+                        "data": data.data
+                    })
                 }
             }
         });
@@ -93,6 +132,11 @@ export class Realtime {
 
         this.socket.io.on("reconnect", (attempt) => {
             console.log("[RECONN] => Reconnected " + attempt);
+
+            // Join rooms
+            this.#topicMap.forEach(async (topic) => {
+                await this.#rejoinRoom(topic);
+            });
         });
 
         this.socket.io.on("reconnect_attempt", (attempt) => {
@@ -128,25 +172,12 @@ export class Realtime {
     async on(topic, func){
         var subscribed = false; 
 
-        if (![CONNECTED, PRESENCE, ...this.roomKeyEvents].includes(topic)){
+        if (![CONNECTED, DISCONNECTED, ...this.roomKeyEvents].includes(topic)){
             //Which means this is a topic and not an event
             if (topic !== null || topic !== undefined){
                 // Are we connected to this room?
-                if (!this.#topicMap.includes(topic)){
-                    // If not, connect and wait for an ack
-                    var response = await this.socket.emitWithAck("enter-room", {
-                        "room": topic
-                    })
-        
-                    if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED"){
-                        this.#topicMap.push(response.room)
-                        subscribed = true; 
-                    }else{
-                        subscribed = false; 
-                    }
-                }else{
-                    subscribed = false; 
-                }
+                subscribed = await this.#createOrJoinRoom(topic); 
+                console.log("SUBSCRIBED ON", subscribed); 
             }else{
                 subscribed = false; 
             }
@@ -154,74 +185,125 @@ export class Realtime {
             if (subscribed){
                 this.#event_func[topic] = func; 
             }
+
+            return subscribed; 
         }else{
             this.#event_func[topic] = func; 
+
+            return true; 
         }
     }
 
     async publish(topic, data){
+        console.log("PUBLISHING", topic);
         if (topic !== null || topic !== undefined){
             await this.#sleep(1);
 
             // Are we connected to this room?
-            if (!this.#topicMap.includes(topic)){
-                // If not, connect and wait for an ack
-                var response = await this.socket.emitWithAck("enter-room", {
-                    "room": topic
-                });
-    
-                console.log(response)
-                if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED"){
-                    this.#topicMap.push(response.room)
-                }
-            }
+            var subscribed = await this.#createOrJoinRoom(topic);
+            console.log("SUBSCRIBED", subscribed); 
 
-            // We are now connected or we already were. Send message to room
-            try{
-                var start = Date.now()
-                var relayResponse = await this.socket.timeout(1).emitWithAck("relay-to-room", {
-                    "id": crypto.randomUUID(),
-                    "room": topic,
-                    "message": data
-                });
+            if(subscribed){
+                // We are now connected or we already were. Send message to room
+                try{
+                    var start = Date.now()
+                    var relayResponse = await this.socket.timeout(1000).emitWithAck("relay-to-room", {
+                        "id": crypto.randomUUID(),
+                        "room": topic,
+                        "message": data
+                    });
 
-                var end = Date.now()
-                var latency = end - start;
-                console.log(`LATENCY => ${latency} ms`);
+                    var end = Date.now()
+                    var latency = end - start;
+                    console.log(`LATENCY => ${latency} ms`);
 
-                this.publishRetryAttempt = 0; 
-            }catch(err){
-                console.error(err);
+                    this.publishRetryAttempt = 0; 
+                }catch(err){
+                    console.error(err);
 
-                // Specifically to handle timeout errors
-                if (err.message.includes("operation has timed out")){
-                    ++this.publishRetryAttempt;
+                    // Specifically to handle timeout errors
+                    if (err.message.includes("operation has timed out")){
+                        ++this.publishRetryAttempt;
 
-                    if(this.publishRetryAttempt < this.#getPublishRetry()){
-                        console.log(`Retrying publish(${topic}, ${data})`);
-                        await this.publish(topic, data);
-                    }else{
-                        console.log(topic, data); 
-                        console.log(`Attempted to publish ${this.publishRetryAttempt} times and failed!`);
+                        if(this.publishRetryAttempt < this.#getPublishRetry()){
+                            console.log(`Retrying publish(${topic}, ${data})`);
+                            await this.publish(topic, data);
+                        }else{
+                            console.log(topic, data); 
+                            console.log(`Attempted to publish ${this.publishRetryAttempt} times and failed!`);
 
-                        relayResponse = {
-                            "status": "PUBLISH_FAIL_TO_SEND",
-                            "data": {
-                                "retry_attempts": this.publishRetryAttempt
+                            relayResponse = {
+                                "status": "PUBLISH_FAIL_TO_SEND",
+                                "sent": false,
+                                "data": {
+                                    "retry_attempts": this.publishRetryAttempt
+                                }
                             }
+
+                            this.publishRetryAttempt = 0; 
                         }
-    
-                        this.publishRetryAttempt = 0; 
                     }
                 }
+
+                // Tell the user that the message was sent to the server
+                relayResponse["sent"] = true; 
+                console.log(relayResponse)
+
+                return relayResponse;
+            }else{
+                return {
+                    "status": "ERROR", 
+                    "data": "Unable to publish to topic. Topic initialization failed"
+                }
             }
-
-            console.log(relayResponse)
-
-            return relayResponse;
         }else{
             return null;
         }
+    }
+
+    // Room functions
+    async #createOrJoinRoom(topic){
+        var subscribed = false; 
+
+        if (!this.#topicMap.includes(topic)){
+            // If not, connect and wait for an ack
+            var response = await this.socket.emitWithAck("enter-room", {
+                "room": topic
+            });
+
+            console.log(response);
+
+            if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED"){
+                this.#topicMap.push(topic);
+                subscribed = true; 
+            }else{
+                subscribed = false; 
+            }
+        }else{
+            subscribed = true; 
+        }
+
+        return subscribed; 
+    }
+
+    async #rejoinRoom(topic){
+        var subscribed = false; 
+
+        // If not, connect and wait for an ack
+        var response = await this.socket.emitWithAck("enter-room", {
+            "room": topic
+        });
+
+        console.log(response);
+
+        if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED"){
+            this.#topicMap.push(topic);
+            subscribed = true; 
+        }else{
+            subscribed = false; 
+        }
+
+        return subscribed; 
     }
 
     // Utility functions
@@ -244,4 +326,3 @@ export class Realtime {
 
 export const CONNECTED = "CONNECTED";
 export const DISCONNECTED = "DISCONNECTED";
-export const PRESENCE = "PRESENCE";
