@@ -11,6 +11,11 @@ export class Realtime {
     publishRetryAttempt = 0; 
     maxPublishRetries = 5;
 
+    roomExitAttempt = 0; 
+    roomExitRetries = 5; 
+
+    reconnectFlag = false;
+
     constructor(api_key){
         this.api_key = api_key;
         this.namespace = ""; 
@@ -95,6 +100,7 @@ export class Realtime {
             return null;
         }
     }
+    
 
     /**
      * Connects to the websocket server
@@ -112,7 +118,7 @@ export class Realtime {
             parser: msgPackParser
         });
 
-        this.socket.on("connect", () => {
+        this.socket.on("connect", async () => {
             console.log(`Connect => ${this.socket.id}`);
 
             // Let's call the callback function if it exists
@@ -121,6 +127,8 @@ export class Realtime {
                     this.#event_func[CONNECTED]()
                 }
             }
+
+            await this.#subscribeToTopics();
         });
         
         /**
@@ -128,6 +136,7 @@ export class Realtime {
          * Executes callback function if initialized by the user
          */
         this.socket.on("room-message", (data) => {
+            console.log(data)
             var room = data.room; 
 
             if (room in this.#event_func){
@@ -164,10 +173,16 @@ export class Realtime {
          */
         this.socket.io.on("reconnect", (attempt) => {
             console.log("[RECONN] => Reconnected " + attempt);
+            this.reconnectFlag = true; 
 
             // Join rooms
             this.#topicMap.forEach(async (topic) => {
-                await this.#rejoinRoom(topic);
+                var subscribed = await this.#rejoinRoom(topic);
+
+                this.#event_func[topic]({
+                    "type": "RECONNECTION_STATUS",
+                    "initialized_topic": subscribed
+                });
             });
         });
 
@@ -205,15 +220,60 @@ export class Realtime {
         });
     }
 
+    async #subscribeToTopics(){
+        this.#topicMap.forEach(async (topic) => {
+            console.log(topic)
+            // Are we connected to this room?
+            var subscribed = await this.#createOrJoinRoom(topic);
+    
+            if (!subscribed){
+                this.#event_func[topic]({
+                    "status": "TOPIC_SUBSCRIBE",
+                    "subscribed": false
+                }); 
+            }
+        });
+    }
+
     /**
      * Deletes reference to user defined event callback.
      * This will "stop listening to an event"
      * @param {string} topic 
      */
-    off(topic){
-        // TODO: Include logic to leave room
+    async off(topic){
         if (this.#topicMap.includes(topic)){
-            this.#topicMap.delete(topic); 
+            try{
+                var response = await this.socket.timeout(1000).emitWithAck("exit-room", {
+                    "room": topic
+                });
+            }catch(err){
+                // Specifically to handle timeout errors
+                if (err.message.includes("operation has timed out")){
+                    ++this.roomExitAttempt;
+
+                    if(this.roomExitAttempt < this.roomExitRetries){
+                        console.log(`Retrying room exit ${topic}`);
+                        await this.#sleep(1);
+                        await this.off(topic);
+                    }else{
+                        console.log(`Attempted to exit room ${this.roomExitAttempt} times and failed!`);
+
+                        response = {
+                            "status": "TOPIC_EXIT",
+                            "exit": false,
+                            "data": {
+                                "retry_attempts": this.roomExitAttempt
+                            }
+                        }
+
+                        this.roomExitAttempt = 0; 
+                    }
+                }
+            }
+
+            this.#topicMap = this.#topicMap.filter(item => item !== topic);
+
+            return response; 
         }
     }
 
@@ -224,26 +284,17 @@ export class Realtime {
      * @returns {boolean} - To check if topic subscription was successful
      */
     async on(topic, func){
-        var subscribed = false; 
-
-        if (![CONNECTED, DISCONNECTED, ...this.roomKeyEvents].includes(topic)){
-            //Which means this is a topic and not an event
-            if (topic !== null || topic !== undefined){
-                // Are we connected to this room?
-                subscribed = await this.#createOrJoinRoom(topic); 
-            }else{
-                subscribed = false; 
-            }
-
-            if (subscribed){
+        if ((topic !== null || topic != undefined) && (func !== null || func !== undefined) && (typeof func == "function")){
+            if(![CONNECTED, DISCONNECTED, ...this.roomKeyEvents].includes(topic)){
+                this.#topicMap.push(topic);
                 this.#event_func[topic] = func; 
+
+                return true
+            }else{
+
             }
-
-            return subscribed; 
         }else{
-            this.#event_func[topic] = func; 
-
-            return true; 
+            return false;
         }
     }
 
@@ -255,12 +306,16 @@ export class Realtime {
      * @returns 
      */
     async publish(topic, data){
-        console.log("PUBLISHING", topic);
+        // Execute only if connected to server
         if (topic !== null || topic !== undefined){
             await this.#sleep(1);
 
-            // Are we connected to this room?
-            var subscribed = await this.#createOrJoinRoom(topic);
+            if(!this.#topicMap.includes(topic)){
+                // Are we connected to this room?
+                var subscribed = await this.#createOrJoinRoom(topic);
+            }else{
+                subscribed = true;
+            }
 
             if(subscribed){
                 // We are now connected or we already were. Send message to room
@@ -318,6 +373,7 @@ export class Realtime {
         }else{
             return null;
         }
+        
     }
 
     // Room functions
@@ -331,7 +387,7 @@ export class Realtime {
     async #createOrJoinRoom(topic){
         var subscribed = false; 
 
-        if (!this.#topicMap.includes(topic)){
+        if (![CONNECTED, DISCONNECTED, ...this.roomKeyEvents].includes(topic)){
             // If not, connect and wait for an ack
             var response = await this.socket.emitWithAck("enter-room", {
                 "room": topic
