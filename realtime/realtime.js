@@ -55,7 +55,7 @@ export class Realtime {
             }else{
                 opts = {};
                 staging = arguments[0];
-                console.log(staging)
+                this.#log(staging)
             }
         }else{
             staging = false;
@@ -68,8 +68,8 @@ export class Realtime {
             this.baseUrl = "http://128.199.176.185:3000";
         }
 
-        console.log(this.baseUrl);
-        console.log(opts);
+        this.#log(this.baseUrl);
+        this.#log(opts);
 
         this.opts = opts;
 
@@ -119,7 +119,7 @@ export class Realtime {
         });
 
         this.socket.on("connect", async () => {
-            console.log(`Connect => ${this.socket.id}`);
+            this.#log(`Connect => ${this.socket.id}`);
 
             // Let's call the callback function if it exists
             if (CONNECTED in this.#event_func){
@@ -136,7 +136,7 @@ export class Realtime {
          * Executes callback function if initialized by the user
          */
         this.socket.on("room-message", (data) => {
-            console.log(data)
+            this.#log(data)
             var room = data.room; 
 
             if (room in this.#event_func){
@@ -163,7 +163,7 @@ export class Realtime {
         });
 
         this.socket.io.on("ping", async (cb) => {
-            console.log("PING");
+            this.#log("PING");
         });
 
         /**
@@ -172,7 +172,7 @@ export class Realtime {
          * connected to.
          */
         this.socket.io.on("reconnect", (attempt) => {
-            console.log("[RECONN] => Reconnected " + attempt);
+            this.#log("[RECONN] => Reconnected " + attempt);
             this.reconnectFlag = true; 
 
             // Join rooms
@@ -190,14 +190,14 @@ export class Realtime {
          * Fires when reconnection attempt is made
          */
         this.socket.io.on("reconnect_attempt", (attempt) => {
-            console.log("[RECON_ATTEMPT] => " + attempt);
+            this.#log("[RECON_ATTEMPT] => " + attempt);
         });
 
         /**
          * Fires when reconnection attempt failed
          */
         this.socket.io.on("reconnect_failed", () => {
-            console.log("[RECONN_FAIL] => Reconnection failed");
+            this.#log("[RECONN_FAIL] => Reconnection failed");
         });
         
         /**
@@ -205,8 +205,8 @@ export class Realtime {
          * Also executes callback (if initialized) on user thread.
          */
         this.socket.on("disconnect", (reason, details) => {
-            console.log(reason, details);
-            console.log("Disconnected"); 
+            this.#log(reason, details);
+            this.#log("Disconnected"); 
     
             // Removing all listeners
             // this.socket.removeAllListeners();
@@ -222,7 +222,7 @@ export class Realtime {
 
     async #subscribeToTopics(){
         this.#topicMap.forEach(async (topic) => {
-            console.log(topic)
+            this.#log(topic)
             // Are we connected to this room?
             var subscribed = await this.#createOrJoinRoom(topic);
     
@@ -252,11 +252,11 @@ export class Realtime {
                     ++this.roomExitAttempt;
 
                     if(this.roomExitAttempt < this.roomExitRetries){
-                        console.log(`Retrying room exit ${topic}`);
+                        this.#log(`Retrying room exit ${topic}`);
                         await this.#sleep(1);
                         await this.off(topic);
                     }else{
-                        console.log(`Attempted to exit room ${this.roomExitAttempt} times and failed!`);
+                        this.#log(`Attempted to exit room ${this.roomExitAttempt} times and failed!`);
 
                         response = {
                             "status": "TOPIC_EXIT",
@@ -329,7 +329,7 @@ export class Realtime {
 
                     var end = Date.now()
                     var latency = end - start;
-                    console.log(`LATENCY => ${latency} ms`);
+                    this.#log(`LATENCY => ${latency} ms`);
 
                     this.publishRetryAttempt = 0; 
                 }catch(err){
@@ -340,11 +340,11 @@ export class Realtime {
                         ++this.publishRetryAttempt;
 
                         if(this.publishRetryAttempt < this.#getPublishRetry()){
-                            console.log(`Retrying publish(${topic}, ${data})`);
+                            this.#log(`Retrying publish(${topic}, ${data})`);
                             await this.publish(topic, data);
                         }else{
-                            console.log(topic, data); 
-                            console.log(`Attempted to publish ${this.publishRetryAttempt} times and failed!`);
+                            this.#log(topic, data); 
+                            this.#log(`Attempted to publish ${this.publishRetryAttempt} times and failed!`);
 
                             relayResponse = {
                                 "status": "PUBLISH_FAIL_TO_SEND",
@@ -361,7 +361,7 @@ export class Realtime {
 
                 // Tell the user that the message was sent to the server
                 relayResponse["sent"] = true; 
-                console.log(relayResponse)
+                this.#log(relayResponse)
 
                 return relayResponse;
             }else{
@@ -393,7 +393,7 @@ export class Realtime {
                 "room": topic
             });
 
-            console.log(response);
+            this.#log(response);
 
             if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED"){
                 this.#topicMap.push(topic);
@@ -421,7 +421,7 @@ export class Realtime {
             "room": topic
         });
 
-        console.log(response);
+        this.#log(response);
 
         if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED"){
             this.#topicMap.push(topic);
@@ -436,6 +436,12 @@ export class Realtime {
     // Utility functions
     #sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    #log(msg){
+        if(this.opts?.debug){
+            console.log(msg);
+        }
     }
 
     #getPublishRetry(){
