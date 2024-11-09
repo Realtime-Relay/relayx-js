@@ -101,7 +101,7 @@ export class Realtime {
 
         var data = response.data
 
-        if (data.status === "SUCCESS"){
+        if (data?.status === "SUCCESS"){
             return data.data.namespace;
         }else{
             return null;
@@ -136,7 +136,7 @@ export class Realtime {
             }
 
             // Set remote user
-            await this.#setRemoteUser();
+            await this.#retryTillSuccess(this.#setRemoteUser, 5, 1);
             
             // Subscribe to initialized topics
             await this.#subscribeToTopics();
@@ -190,7 +190,7 @@ export class Realtime {
             this.reconnectFlag = true; 
 
             // Set remote user data again
-            await this.#setRemoteUser();
+            await this.#retryTillSuccess(this.#setRemoteUser, 5, 1);
 
             // Join rooms again
             await this.#rejoinRoom(); 
@@ -251,39 +251,42 @@ export class Realtime {
      * @param {string} topic 
      */
     async off(topic){
-        if (this.#topicMap.includes(topic)){
-            try{
-                var response = await this.socket.timeout(1000).emitWithAck("exit-room", {
+        await this.#retryTillSuccess(this.#off, 5, 1, topic); 
+    }
+
+    async #off(topic){
+        var success = false; 
+        var response = null; 
+
+        try{
+            if (this.#topicMap.includes(topic)){
+                response = await this.socket.timeout(1000).emitWithAck("exit-room", {
                     "room": topic
                 });
-            }catch(err){
-                // Specifically to handle timeout errors
-                if (err.message.includes("operation has timed out")){
-                    ++this.roomExitAttempt;
-
-                    if(this.roomExitAttempt < this.roomExitRetries){
-                        this.#log(`Retrying room exit ${topic}`);
-                        await this.#sleep(1);
-                        await this.off(topic);
-                    }else{
-                        this.#log(`Attempted to exit room ${this.roomExitAttempt} times and failed!`);
-
-                        response = {
-                            "status": "TOPIC_EXIT",
-                            "exit": false,
-                            "data": {
-                                "retry_attempts": this.roomExitAttempt
-                            }
-                        }
-
-                        this.roomExitAttempt = 0; 
-                    }
+            }else{
+                response = {
+                    "status": "TOPIC_EXIT",
+                    "exit": false
                 }
             }
 
             this.#topicMap = this.#topicMap.filter(item => item !== topic);
 
-            return response; 
+            success = true; 
+        }catch(err){
+            this.#log(err);
+
+            response = {
+                "status": "TOPIC_EXIT",
+                "exit": false
+            }
+
+            success = false;
+        }
+
+        return {
+            success: success,
+            output: response
         }
     }
 
@@ -316,20 +319,24 @@ export class Realtime {
      * @returns 
      */
     async publish(topic, data){
-        // Execute only if connected to server
-        if (topic !== null || topic !== undefined){
-            await this.#sleep(1);
+        var retries = this.#getPublishRetry(); 
+        await this.#retryTillSuccess(this.#publish, retries, 1, topic, data);
+    }
 
-            if(!this.#topicMap.includes(topic)){
-                // Are we connected to this room?
-                var subscribed = await this.#createOrJoinRoom(topic);
-            }else{
-                subscribed = true;
-            }
+    async #publish(topic, data){
+        var subscribed = false;
+        var success = false;
 
-            if(subscribed){
-                // We are now connected or we already were. Send message to room
-                try{
+        try{
+            if (topic !== null || topic !== undefined){
+                if(!this.#topicMap.includes(topic)){
+                    // Are we connected to this room?
+                    subscribed = await this.#createOrJoinRoom(topic);
+                }else{
+                    subscribed = true;
+                }
+
+                if(subscribed){
                     var start = Date.now()
                     var relayResponse = await this.socket.timeout(1000).emitWithAck("relay-to-room", {
                         "id": crypto.randomUUID(),
@@ -337,53 +344,38 @@ export class Realtime {
                         "message": data
                     });
 
+                    // RELAY_FAILURE will set sent = false
+                    relayResponse["sent"] = relayResponse["status"] == "ACK_SUCCESS"; 
+
                     var end = Date.now()
                     var latency = end - start;
                     this.#log(`LATENCY => ${latency} ms`);
+                }else{
+                    this.#log(`Unable to send message, topic not subscribed to`);
 
-                    this.publishRetryAttempt = 0; 
-                }catch(err){
-                    console.error(err);
-
-                    // Specifically to handle timeout errors
-                    if (err.message.includes("operation has timed out")){
-                        ++this.publishRetryAttempt;
-
-                        if(this.publishRetryAttempt < this.#getPublishRetry()){
-                            this.#log(`Retrying publish(${topic}, ${data})`);
-                            await this.publish(topic, data);
-                        }else{
-                            this.#log(topic, data); 
-                            this.#log(`Attempted to publish ${this.publishRetryAttempt} times and failed!`);
-
-                            relayResponse = {
-                                "status": "PUBLISH_FAIL_TO_SEND",
-                                "sent": false,
-                                "data": {
-                                    "retry_attempts": this.publishRetryAttempt
-                                }
-                            }
-
-                            this.publishRetryAttempt = 0; 
-                        }
+                    relayResponse = relayResponse = {
+                        "status": "PUBLISH_FAIL_TO_SEND",
+                        "sent": false
                     }
                 }
 
-                // Tell the user that the message was sent to the server
-                relayResponse["sent"] = true; 
-                this.#log(relayResponse)
-
-                return relayResponse;
-            }else{
-                return {
-                    "status": "ERROR", 
-                    "data": "Unable to publish to topic. Topic initialization failed"
-                }
+                success = true;
             }
-        }else{
-            return null;
+        }catch(err){
+            this.#log(err);
+
+            relayResponse = relayResponse = {
+                "status": "PUBLISH_FAIL_TO_SEND",
+                "sent": false
+            }
+
+            success = false;
         }
-        
+
+        return {
+            success: success,
+            output: relayResponse
+        }
     }
 
     // Room functions
@@ -458,25 +450,29 @@ export class Realtime {
 
     async #setRemoteUser(){
         var userData = this.getUser();
+        var success = false;
 
-        if (userData !== null && userData !== undefined){
-            try{
-                this.socket.timeout(1000).emitWithAck("set-user", {
+        try{
+            if (userData !== null && userData !== undefined){
+                await this.socket.timeout(1000).emitWithAck("set-user", {
                     user_data: userData
                 });
-            }catch(err){
-                ++this.setRemoteUserAttempts; 
-    
-                if (this.setRemoteUserAttempts <= this.setRemoteUserRetries){
-                    console.log(`Attempt ${this.setRemoteUserAttempts} to set remote user`);
-                    await this.setRemoteUser();
-                }else{
-                    console.log(`${this.setRemoteUserAttempts} were made to set user but was unsuccessful`); 
-                    this.setRemoteUserAttempts = 0; 
-                }
+
+                console.log("SET USER SUCCESS")
+            }else{
+                console.log("No user object found, skipping setting user");
             }
-        }else{
-            console.log("No user object found, skipping setting user");
+
+            success = true; 
+        }catch(err){
+            this.#log(err); 
+
+            success = false; 
+        }
+
+        return {
+            success: success,
+            output: null
         }
     }
 
@@ -501,6 +497,37 @@ export class Realtime {
         }else{
             return this.maxPublishRetries; 
         }
+    }
+
+    async #retryTillSuccess(func, count, delay, ...args){
+        func = func.bind(this);
+
+        var output = null;
+        var success = false; 
+        var methodDataOutput = null; 
+
+        for(let i = 1; i <= count; i++){
+            this.#log(`Attempt ${i} at executing ${func}()`)
+
+            await this.#sleep(delay)
+
+            output = await func(...args); 
+            success = output.success; 
+            this.#log(output);
+
+            methodDataOutput = output.output; 
+
+            if (success){
+                this.#log(`Successfully called ${func}`)
+                break;
+            }
+        }
+
+        if(!success){
+            this.#log(`${func} executed ${count} times BUT not a success`);
+        }
+
+        return methodDataOutput;
     }
 }
 
