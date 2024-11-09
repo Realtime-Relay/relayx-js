@@ -6,7 +6,10 @@ export class Realtime {
 
     #event_func = {}; 
     #topicMap = []; 
-    #roomKeyEvents = ["connect", "room-message", "room-join", "disconnect"];
+    #roomKeyEvents = ["connect", "room-message", "room-join", "disconnect",
+        "ping", "reconnect_attempt", "reconnect_failed", "room-message-ack",
+        "exit-room", "relay-to-room", "enter-room", "set-user"
+    ];
 
     // Retry attempts
     publishRetryAttempt = 0; 
@@ -311,7 +314,15 @@ export class Realtime {
      * @returns {boolean} - To check if topic subscription was successful
      */
     async on(topic, func){
-        if ((topic !== null || topic != undefined) && (func !== null || func !== undefined) && (typeof func == "function")){
+        if ((typeof func == "function")){
+            throw new Error(`Expected $listener type -> function. Instead receieved -> ${typeof func}`);
+        }
+        
+        if(typeof topic == "string"){
+            throw new Error(`Expected $topic type -> string. Instead receieved -> ${typeof func}`);
+        }
+
+        if ((topic !== null || topic != undefined) && (func !== null || func !== undefined)){
             if(![CONNECTED, DISCONNECTED, ...this.#roomKeyEvents].includes(topic)){
                 this.#topicMap.push(topic);
                 this.#event_func[topic] = func; 
@@ -386,7 +397,7 @@ export class Realtime {
         }catch(err){
             this.#log(err);
 
-            relayResponse = relayResponse = {
+            relayResponse = {
                 "status": "PUBLISH_FAIL_TO_SEND",
                 "sent": false,
                 "err": err.message
@@ -498,6 +509,14 @@ export class Realtime {
     }
 
     // Utility functions
+    isTopicValid(topic){
+        if(topic !== null && topic !== undefined && (typeof topic) == "string"){
+            return !this.#roomKeyEvents.includes(topic);
+        }else{
+            return false;
+        }
+    }
+
     #sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
