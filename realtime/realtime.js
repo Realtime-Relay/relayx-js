@@ -28,6 +28,7 @@ export class Realtime {
 
     // Retry attempts end
     reconnected = false;
+    disconnected = true;
 
     // Test Variables
     #timeout = 1000;
@@ -119,7 +120,6 @@ export class Realtime {
             }
        }catch(err){
             throw new Error(err.message);
-            return null;
        }
     }
     
@@ -142,6 +142,7 @@ export class Realtime {
 
         this.socket.on("connect", async () => {
             this.#log(`Connect => ${this.socket.id}`);
+            this.disconnected = false;
 
             // Let's call the callback function if it exists
             if (CONNECTED in this.#event_func){
@@ -206,6 +207,7 @@ export class Realtime {
         this.socket.io.on("reconnect", async (attempt) => {
             this.#log("[RECONN] => Reconnected " + attempt);
             this.reconnected = true; 
+            this.disconnected = false;
 
             if(RECONNECT in this.#event_func){
                 this.#event_func[RECONNECT](this.#RECONNECTED);   
@@ -251,6 +253,8 @@ export class Realtime {
         this.socket.on("disconnect", (reason, details) => {
             this.#log(reason, details);
             this.#log("Disconnected"); 
+
+            this.disconnected = true;
     
             // Removing all listeners
             // this.socket.removeAllListeners();
@@ -284,6 +288,7 @@ export class Realtime {
     close(){
         if(this.socket !== null && this.socket !== undefined){
             this.reconnected = false;
+            this.disconnected = true;
 
             this.socket.disconnect();
         }else{
