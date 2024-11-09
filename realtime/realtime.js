@@ -6,7 +6,7 @@ export class Realtime {
 
     #event_func = {}; 
     #topicMap = []; 
-    roomKeyEvents = ["connect", "room-message", "room-join", "disconnect"];
+    #roomKeyEvents = ["connect", "room-message", "room-join", "disconnect"];
 
     // Retry attempts
     publishRetryAttempt = 0; 
@@ -19,8 +19,10 @@ export class Realtime {
     setRemoteUserRetries = 5; 
 
     // Retry attempts end
-
     reconnectFlag = false;
+
+    // Test Variables
+    #timeout = 1000;
 
     constructor(api_key){
         this.api_key = api_key;
@@ -230,11 +232,22 @@ export class Realtime {
         });
     }
 
+    /**
+     * Closes connection
+     */
+    close(){
+        if(this.socket !== null && this.socket !== undefined){
+            this.socket.disconnect();
+        }else{
+            this.#log("Null / undefined socket, cannot close connection");
+        }
+    }
+
     async #subscribeToTopics(){
         this.#topicMap.forEach(async (topic) => {
             this.#log(topic)
             // Are we connected to this room?
-            var subscribed = await this.#createOrJoinRoom(topic);
+            var subscribed = await this.#retryTillSuccess(this.#createOrJoinRoom, 5, 1, topic);
     
             if (!subscribed){
                 this.#event_func[topic]({
@@ -257,16 +270,17 @@ export class Realtime {
     async #off(topic){
         var success = false; 
         var response = null; 
+        var ackTimeout = this.#getAckTimeout()
 
         try{
             if (this.#topicMap.includes(topic)){
-                response = await this.socket.timeout(1000).emitWithAck("exit-room", {
+                response = await this.socket.timeout(ackTimeout).emitWithAck("exit-room", {
                     "room": topic
                 });
             }else{
                 response = {
                     "status": "TOPIC_EXIT",
-                    "exit": false
+                    "exit": true
                 }
             }
 
@@ -298,13 +312,13 @@ export class Realtime {
      */
     async on(topic, func){
         if ((topic !== null || topic != undefined) && (func !== null || func !== undefined) && (typeof func == "function")){
-            if(![CONNECTED, DISCONNECTED, ...this.roomKeyEvents].includes(topic)){
+            if(![CONNECTED, DISCONNECTED, ...this.#roomKeyEvents].includes(topic)){
                 this.#topicMap.push(topic);
                 this.#event_func[topic] = func; 
 
                 return true
             }else{
-
+                return false;
             }
         }else{
             return false;
@@ -326,19 +340,20 @@ export class Realtime {
     async #publish(topic, data){
         var subscribed = false;
         var success = false;
+        var ackTimeout = this.#getAckTimeout();
 
         try{
-            if (topic !== null || topic !== undefined){
+            if ((topic !== null && topic !== undefined) && (data !== null && data !== undefined)){
                 if(!this.#topicMap.includes(topic)){
                     // Are we connected to this room?
-                    subscribed = await this.#createOrJoinRoom(topic);
+                    subscribed = await this.#retryTillSuccess(this.#createOrJoinRoom, 5, 1, topic);
                 }else{
                     subscribed = true;
                 }
 
                 if(subscribed){
                     var start = Date.now()
-                    var relayResponse = await this.socket.timeout(1000).emitWithAck("relay-to-room", {
+                    var relayResponse = await this.socket.timeout(ackTimeout).emitWithAck("relay-to-room", {
                         "id": crypto.randomUUID(),
                         "room": topic,
                         "message": data
@@ -360,13 +375,21 @@ export class Realtime {
                 }
 
                 success = true;
+            }else{
+                success = false; 
+                relayResponse = {
+                    "status": "PUBLISH_INPUT_ERR", 
+                    "sent": false,
+                    "message": `topic is ${topic} || data is ${data}`
+                }
             }
         }catch(err){
             this.#log(err);
 
             relayResponse = relayResponse = {
                 "status": "PUBLISH_FAIL_TO_SEND",
-                "sent": false
+                "sent": false,
+                "err": err.message
             }
 
             success = false;
@@ -387,27 +410,38 @@ export class Realtime {
      * @returns {boolean} - True if joined successfully else false.
      */
     async #createOrJoinRoom(topic){
-        var subscribed = false; 
+        var subscribed = false;
+        var ackTimeout = this.#getAckTimeout();
 
-        if (![CONNECTED, DISCONNECTED, ...this.roomKeyEvents].includes(topic)){
-            // If not, connect and wait for an ack
-            var response = await this.socket.emitWithAck("enter-room", {
-                "room": topic
-            });
-
-            this.#log(response);
-
-            if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED"){
-                this.#topicMap.push(topic);
-                subscribed = true; 
+        try{
+            if (![CONNECTED, DISCONNECTED, ...this.#roomKeyEvents].includes(topic)){
+                // If not, connect and wait for an ack
+                var response = await this.socket.timeout(ackTimeout).emitWithAck("enter-room", {
+                    "room": topic
+                });
+    
+                this.#log(response);
+    
+                if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED" ||
+                    response["status"] == "ALREADY_IN_ROOM"){
+                    this.#topicMap.push(topic);
+                    subscribed = true; 
+                }else{
+                    subscribed = false; 
+                }
             }else{
-                subscribed = false; 
+                throw new Error(`Reserved topic => '${topic}'. Do not use!`);
             }
-        }else{
-            subscribed = true; 
+        }catch(err){
+            this.#log(err);
+
+            subscribed = false;
         }
 
-        return subscribed; 
+        return {
+            success: subscribed,
+            output: subscribed
+        }; 
     }
 
     /**
@@ -417,20 +451,8 @@ export class Realtime {
      */
     async #rejoinRoom(){
         this.#topicMap.forEach(async (topic) => {
-            var subscribed = false; 
-
             // If not, connect and wait for an ack
-            var response = await this.socket.emitWithAck("enter-room", {
-                "room": topic
-            });
-
-            this.#log(response);
-
-            if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED"){
-                subscribed = true; 
-            }else{
-                subscribed = false; 
-            }
+            var subscribed = await this.#retryTillSuccess(this.#createOrJoinRoom, 5, 1, topic);
 
             this.#event_func[topic]({
                 "type": "RECONNECTION_STATUS",
@@ -451,14 +473,13 @@ export class Realtime {
     async #setRemoteUser(){
         var userData = this.getUser();
         var success = false;
+        var ackTimeout = this.#getAckTimeout();
 
         try{
             if (userData !== null && userData !== undefined){
-                await this.socket.timeout(1000).emitWithAck("set-user", {
+                await this.socket.timeout(ackTimeout).emitWithAck("set-user", {
                     user_data: userData
                 });
-
-                console.log("SET USER SUCCESS")
             }else{
                 console.log("No user object found, skipping setting user");
             }
@@ -490,12 +511,26 @@ export class Realtime {
     #getPublishRetry(){
         if(this.opts !== null && this.opts !== undefined){
             if(this.opts.max_retries !== null && this.opts.max_retries !== undefined){
-                return this.opts.max_retries;
+                if (this.opts.max_retries <= 0){
+                    return this.maxPublishRetries; 
+                }else{
+                    return this.opts.max_retries;
+                }
             }else{
                 return this.maxPublishRetries; 
             }
         }else{
             return this.maxPublishRetries; 
+        }
+    }
+
+    #getAckTimeout(){
+        if(process.env.NODE_ENV == "test"){
+            this.#log(`TIMEOUT -> ${this.#timeout}`)
+            return this.#timeout;
+        }else{
+            this.#timeout = 1000;
+            return 1000;
         }
     }
 
@@ -536,6 +571,39 @@ export class Realtime {
         }
 
         return methodDataOutput;
+    }
+
+    // Exposure for tests
+    testRetryTillSuccess(){
+        if(process.env.NODE_ENV == "test"){
+            return this.#retryTillSuccess.bind(this);
+        }else{
+            return null; 
+        }
+    }
+
+    testGetPublishRetry(){
+        if(process.env.NODE_ENV == "test"){
+            return this.#getPublishRetry.bind(this);
+        }else{
+            return null; 
+        }
+    }
+
+    testCreateOrJoinRoom(){
+        if(process.env.NODE_ENV == "test"){
+            return this.#createOrJoinRoom.bind(this);
+        }else{
+            return null;
+        }
+    }
+
+    testSetRemoteUser(){
+        if(process.env.NODE_ENV == "test"){
+            return this.#setRemoteUser.bind(this);
+        }else{
+            return null;
+        }
     }
 }
 
