@@ -11,6 +11,11 @@ export class Realtime {
         "exit-room", "relay-to-room", "enter-room", "set-user"
     ];
 
+    // Status Codes
+    #RECONNECTING = "RECONNECTING";
+    #RECONNECTED = "RECONNECTED";
+    #RECONN_FAIL = "RECONN_FAIL";
+
     // Retry attempts
     publishRetryAttempt = 0; 
     maxPublishRetries = 5;
@@ -194,6 +199,10 @@ export class Realtime {
             this.#log("[RECONN] => Reconnected " + attempt);
             this.reconnectFlag = true; 
 
+            if(RECONNECT in this.#event_func){
+                this.#event_func[RECONNECT](this.#RECONNECTED);   
+            }
+
             // Set remote user data again
             await this.#retryTillSuccess(this.#setRemoteUser, 5, 1);
 
@@ -206,6 +215,12 @@ export class Realtime {
          */
         this.socket.io.on("reconnect_attempt", (attempt) => {
             this.#log("[RECON_ATTEMPT] => " + attempt);
+
+            if (attempt === 1){
+                if(RECONNECT in this.#event_func){
+                    this.#event_func[RECONNECT](this.#RECONNECTING);   
+                }
+            }
         });
 
         /**
@@ -213,6 +228,10 @@ export class Realtime {
          */
         this.socket.io.on("reconnect_failed", () => {
             this.#log("[RECONN_FAIL] => Reconnection failed");
+
+            if(RECONNECT in this.#event_func){
+                this.#event_func[RECONNECT](this.#RECONN_FAIL);   
+            }
         });
         
         /**
@@ -314,18 +333,22 @@ export class Realtime {
      * @returns {boolean} - To check if topic subscription was successful
      */
     async on(topic, func){
-        if ((typeof func == "function")){
+        if ((typeof func !== "function")){
             throw new Error(`Expected $listener type -> function. Instead receieved -> ${typeof func}`);
         }
         
-        if(typeof topic == "string"){
+        if(typeof topic !== "string"){
             throw new Error(`Expected $topic type -> string. Instead receieved -> ${typeof func}`);
         }
 
         if ((topic !== null || topic != undefined) && (func !== null || func !== undefined)){
-            if(![CONNECTED, DISCONNECTED, ...this.#roomKeyEvents].includes(topic)){
-                this.#topicMap.push(topic);
+            if(!this.#roomKeyEvents.includes(topic)){
                 this.#event_func[topic] = func; 
+
+                if (![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
+                    this.#RECONNECTING, this.#RECONN_FAIL, ...this.#roomKeyEvents].includes(topic)){
+                        this.#topicMap.push(topic);
+                }
 
                 return true
             }else{
@@ -627,4 +650,5 @@ export class Realtime {
 }
 
 export const CONNECTED = "CONNECTED";
+export const RECONNECT = "RECONNECT";
 export const DISCONNECTED = "DISCONNECTED";
