@@ -499,6 +499,14 @@ export class Realtime {
         }
     }
 
+    /**
+     * 
+     * @param {function} func - Function to execute under retry
+     * @param {int} count - Number of times to retry
+     * @param {int} delay - Delay between each retry
+     * @param  {...any} args - Args to pass to func
+     * @returns {any} - Output of the func method
+     */
     async #retryTillSuccess(func, count, delay, ...args){
         func = func.bind(this);
 
