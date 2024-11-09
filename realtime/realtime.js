@@ -27,7 +27,7 @@ export class Realtime {
     setRemoteUserRetries = 5; 
 
     // Retry attempts end
-    reconnectFlag = false;
+    reconnected = false;
 
     // Test Variables
     #timeout = 1000;
@@ -145,11 +145,14 @@ export class Realtime {
                 }
             }
 
-            // Set remote user
-            await this.#retryTillSuccess(this.#setRemoteUser, 5, 1);
-            
-            // Subscribe to initialized topics
-            await this.#subscribeToTopics();
+            // Execute only on first time connection
+            if(!this.reconnected){
+                // Set remote user
+                await this.#retryTillSuccess(this.#setRemoteUser, 5, 1);
+                
+                // Subscribe to initialized topics
+                await this.#subscribeToTopics();
+            }
         });
         
         /**
@@ -197,7 +200,7 @@ export class Realtime {
          */
         this.socket.io.on("reconnect", async (attempt) => {
             this.#log("[RECONN] => Reconnected " + attempt);
-            this.reconnectFlag = true; 
+            this.reconnected = true; 
 
             if(RECONNECT in this.#event_func){
                 this.#event_func[RECONNECT](this.#RECONNECTED);   
@@ -205,6 +208,8 @@ export class Realtime {
 
             // Set remote user data again
             await this.#retryTillSuccess(this.#setRemoteUser, 5, 1);
+
+            this.#log(this.#topicMap);
 
             // Join rooms again
             await this.#rejoinRoom(); 
@@ -259,6 +264,8 @@ export class Realtime {
      */
     close(){
         if(this.socket !== null && this.socket !== undefined){
+            this.reconnected = false;
+
             this.socket.disconnect();
         }else{
             this.#log("Null / undefined socket, cannot close connection");
@@ -458,7 +465,6 @@ export class Realtime {
     
                 if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED" ||
                     response["status"] == "ALREADY_IN_ROOM"){
-                    this.#topicMap.push(topic);
                     subscribed = true; 
                 }else{
                     subscribed = false; 
@@ -592,7 +598,7 @@ export class Realtime {
         var methodDataOutput = null; 
 
         for(let i = 1; i <= count; i++){
-            this.#log(`Attempt ${i} at executing ${func}()`)
+            this.#log(`Attempt ${i} at executing ${func.name}()`)
 
             await this.#sleep(delay)
 
@@ -603,13 +609,13 @@ export class Realtime {
             methodDataOutput = output.output; 
 
             if (success){
-                this.#log(`Successfully called ${func}`)
+                this.#log(`Successfully called ${func.name}`)
                 break;
             }
         }
 
         if(!success){
-            this.#log(`${func} executed ${count} times BUT not a success`);
+            this.#log(`${func.name} executed ${count} times BUT not a success`);
         }
 
         return methodDataOutput;
