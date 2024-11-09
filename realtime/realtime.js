@@ -251,7 +251,7 @@ export class Realtime {
      * @param {string} topic 
      */
     async off(topic){
-        await this.#retryTillSuccess(this.#off, 5, 1, topic); 
+        return await this.#retryTillSuccess(this.#off, 5, 1, topic); 
     }
 
     async #off(topic){
@@ -320,7 +320,7 @@ export class Realtime {
      */
     async publish(topic, data){
         var retries = this.#getPublishRetry(); 
-        await this.#retryTillSuccess(this.#publish, retries, 1, topic, data);
+        return await this.#retryTillSuccess(this.#publish, retries, 1, topic, data);
     }
 
     async #publish(topic, data){
