@@ -103,19 +103,24 @@ export class Realtime {
      * @returns {string} namespace value. Null if failed to retreive
      */
     async #getNameSpace() {
-        var response = await axios.get(this.baseUrl + "/get-namespace",{
-            headers: {
-                "Authorization": `Bearer ${this.api_key}`
+       try{
+            var response = await axios.get(this.baseUrl + "/get-namespace",{
+                headers: {
+                    "Authorization": `Bearer ${this.api_key}`
+                }
+            });
+
+            var data = response.data
+
+            if (data?.status === "SUCCESS"){
+                return data.data.namespace;
+            }else{
+                return null;
             }
-        });
-
-        var data = response.data
-
-        if (data?.status === "SUCCESS"){
-            return data.data.namespace;
-        }else{
+       }catch(err){
+            throw new Error(err.message);
             return null;
-        }
+       }
     }
     
 
@@ -250,10 +255,24 @@ export class Realtime {
             // Removing all listeners
             // this.socket.removeAllListeners();
 
+            var status = "";
+
+            if (reason == "io server disconnect"){
+                status = "SERVER_FORCEFULLY_DISCONNECTED_THIS_USER";
+            }else if(reason == "io client disconnect"){
+                status = "MANUAL_CONNECTION_CLOSE_BY_USER";
+            }else if(reason == "ping timeout"){
+                status = "HEARTBEAT_TIMEOUT";
+            }else if(reason == "transport close"){
+                status = "SERVER_DISCONNECTED_THIS_USER";
+            }else if(reason == "transport error"){
+                status = "CONNECTION_ERROR";
+            }
+
             // Let's call the callback function if it exists
             if (DISCONNECTED in this.#event_func){
                 if (this.#event_func[DISCONNECTED] !== null || this.#event_func[DISCONNECTED] !== undefined){
-                    this.#event_func[DISCONNECTED]()
+                    this.#event_func[DISCONNECTED](status)
                 }
             }
         });
