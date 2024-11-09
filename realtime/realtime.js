@@ -8,11 +8,17 @@ export class Realtime {
     #topicMap = []; 
     roomKeyEvents = ["connect", "room-message", "room-join", "disconnect"];
 
+    // Retry attempts
     publishRetryAttempt = 0; 
     maxPublishRetries = 5;
 
     roomExitAttempt = 0; 
     roomExitRetries = 5; 
+
+    setRemoteUserAttempts = 0;
+    setRemoteUserRetries = 5; 
+
+    // Retry attempts end
 
     reconnectFlag = false;
 
@@ -129,6 +135,10 @@ export class Realtime {
                 }
             }
 
+            // Set remote user
+            await this.#setRemoteUser();
+            
+            // Subscribe to initialized topics
             await this.#subscribeToTopics();
         });
         
@@ -136,7 +146,7 @@ export class Realtime {
          * Listener to recieve messages from the server.
          * Executes callback function if initialized by the user
          */
-        this.socket.on("room-message", (data) => {
+        this.socket.on("room-message", async (data) => {
             this.#log(data)
             var room = data.room; 
 
@@ -148,6 +158,9 @@ export class Realtime {
                     })
                 }
             }
+
+            await this.#sleep(2);
+            await this.socket.emitWithAck("room-message-ack", data); 
         });
 
         /**
@@ -172,19 +185,15 @@ export class Realtime {
          * Makes sure client joins all rooms it was previously
          * connected to.
          */
-        this.socket.io.on("reconnect", (attempt) => {
+        this.socket.io.on("reconnect", async (attempt) => {
             this.#log("[RECONN] => Reconnected " + attempt);
             this.reconnectFlag = true; 
 
-            // Join rooms
-            this.#topicMap.forEach(async (topic) => {
-                var subscribed = await this.#rejoinRoom(topic);
+            // Set remote user data again
+            await this.#setRemoteUser();
 
-                this.#event_func[topic]({
-                    "type": "RECONNECTION_STATUS",
-                    "initialized_topic": subscribed
-                });
-            });
+            // Join rooms again
+            await this.#rejoinRoom(); 
         });
 
         /**
@@ -414,24 +423,61 @@ export class Realtime {
      * @param {string} topic - Name of the room
      * @returns {boolean} - True if rejoined successfully else false.
      */
-    async #rejoinRoom(topic){
-        var subscribed = false; 
+    async #rejoinRoom(){
+        this.#topicMap.forEach(async (topic) => {
+            var subscribed = false; 
 
-        // If not, connect and wait for an ack
-        var response = await this.socket.emitWithAck("enter-room", {
-            "room": topic
+            // If not, connect and wait for an ack
+            var response = await this.socket.emitWithAck("enter-room", {
+                "room": topic
+            });
+
+            this.#log(response);
+
+            if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED"){
+                subscribed = true; 
+            }else{
+                subscribed = false; 
+            }
+
+            this.#event_func[topic]({
+                "type": "RECONNECTION_STATUS",
+                "initialized_topic": subscribed
+            });
         });
+    }
 
-        this.#log(response);
+    // User functions
+    setUser(user){
+        this.user = user; 
+    }
 
-        if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED"){
-            this.#topicMap.push(topic);
-            subscribed = true; 
+    getUser(){
+        return this.user !== null && this.user !== undefined ? this.user : null;
+    }
+
+    async #setRemoteUser(){
+        var userData = this.getUser();
+
+        if (userData !== null && userData !== undefined){
+            try{
+                this.socket.timeout(1000).emitWithAck("set-user", {
+                    user_data: userData
+                });
+            }catch(err){
+                ++this.setRemoteUserAttempts; 
+    
+                if (this.setRemoteUserAttempts <= this.setRemoteUserRetries){
+                    console.log(`Attempt ${this.setRemoteUserAttempts} to set remote user`);
+                    await this.setRemoteUser();
+                }else{
+                    console.log(`${this.setRemoteUserAttempts} were made to set user but was unsuccessful`); 
+                    this.setRemoteUserAttempts = 0; 
+                }
+            }
         }else{
-            subscribed = false; 
+            console.log("No user object found, skipping setting user");
         }
-
-        return subscribed; 
     }
 
     // Utility functions
