@@ -205,10 +205,22 @@ test("Testing publish(topic, data) method", async () => {
         message: "Hello World!"
     });
 
-    expect(response).toStrictEqual({
-        "status": "ACK_SUCCESS",
-        "sent": true
+    expect(response["message"]).not.toBeUndefined();
+    expect(response["message"]).not.toBeNull();
+
+    expect(response["message"]["id"]).not.toBeUndefined();
+    expect(response["message"]["id"]).not.toBeNull();
+
+    expect(response["message"]["message"]).toStrictEqual({
+        "message": "Hello World!",
     });
+
+    expect(response["message"]["topic"]).toBe("hello");
+
+    expect(response["sent"]).toBeTruthy();
+    expect(response["status"]).toBe("ACK_SUCCESS");
+
+    expect(response["connected"]).toBeTruthy();
 });
 
 test("Testing publish(topic, data) with invalid inputs", async () => {
@@ -220,6 +232,7 @@ test("Testing publish(topic, data) with invalid inputs", async () => {
     expect(response).toStrictEqual({
         "status": "PUBLISH_INPUT_ERR",
         "sent": false,
+        "connected": true,
         "message": `topic is null || data is ${data}`
     });
 
@@ -228,6 +241,7 @@ test("Testing publish(topic, data) with invalid inputs", async () => {
     expect(response).toStrictEqual({
         "status": "PUBLISH_INPUT_ERR",
         "sent": false,
+        "connected": true,
         "message": `topic is undefined || data is ${data}`
     });
 
@@ -236,6 +250,7 @@ test("Testing publish(topic, data) with invalid inputs", async () => {
     expect(response).toStrictEqual({
         "status": "PUBLISH_INPUT_ERR",
         "sent": false,
+        "connected": true,
         "message": `topic is test-topic || data is null`
     });
 
@@ -244,6 +259,7 @@ test("Testing publish(topic, data) with invalid inputs", async () => {
     expect(response).toStrictEqual({
         "status": "PUBLISH_INPUT_ERR",
         "sent": false,
+        "connected": true,
         "message": `topic is test-topic || data is undefined`
     });
 
@@ -252,6 +268,7 @@ test("Testing publish(topic, data) with invalid inputs", async () => {
     expect(response).toStrictEqual({
         "status": "PUBLISH_INPUT_ERR",
         "sent": false,
+        "connected": true,
         "message": `topic is null || data is undefined`
     });
 
@@ -260,6 +277,7 @@ test("Testing publish(topic, data) with invalid inputs", async () => {
     expect(response).toStrictEqual({
         "status": "PUBLISH_INPUT_ERR",
         "sent": false,
+        "connected": true,
         "message": `topic is null || data is null`
     });
 
@@ -268,6 +286,7 @@ test("Testing publish(topic, data) with invalid inputs", async () => {
     expect(response).toStrictEqual({
         "status": "PUBLISH_INPUT_ERR",
         "sent": false,
+        "connected": true,
         "message": `topic is undefined || data is undefined`
     });
 
@@ -276,6 +295,7 @@ test("Testing publish(topic, data) with invalid inputs", async () => {
     expect(response).toStrictEqual({
         "status": "PUBLISH_INPUT_ERR",
         "sent": false,
+        "connected": true,
         "message": `topic is undefined || data is null`
     });
 });
@@ -331,4 +351,34 @@ test("Testing setting remote user", async () => {
     // With retry
     response = await retryMethod(setRemoteUser, 5, 1);
     expect(response).toBeNull();
+});
+
+test("Test isTopicValidMethod()", () => {
+    var reservedTopics = ["connect", "room-message", "room-join", "disconnect",
+        "ping", "reconnect_attempt", "reconnect_failed", "room-message-ack",
+        "exit-room", "relay-to-room", "enter-room", "set-user", "CONNECTED", "DISCONNECTED",
+        "RECONNECT", "RECONNECTED", "RECONNECTING", "RECONN_FAIL", "MESSAGE_RESEND"
+    ];
+
+    reservedTopics.forEach(topic => {
+        var valid = realTimeEnabled.isTopicValid(topic);
+        expect(valid).toBeFalsy();
+    });
+
+    var unreservedInvalidTopics = [null, undefined, 1234, 
+        () => {console.log("hello")},
+        12.2, false, true, [], [1,2,3],
+        {test: 1}, {}];
+        
+    unreservedInvalidTopics.forEach(topic => {
+        var valid = realTimeEnabled.isTopicValid(topic);
+        expect(valid).toBeFalsy();
+    });
+
+    var unreservedValidTopics = ["hello", "test-room", "heyyyyy", "room-connect"]; 
+
+    unreservedValidTopics.forEach(topic => {
+        var valid = realTimeEnabled.isTopicValid(topic);
+        expect(valid).toBeTruthy();
+    });
 });

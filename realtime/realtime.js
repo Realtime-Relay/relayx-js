@@ -30,6 +30,9 @@ export class Realtime {
     reconnected = false;
     disconnected = true;
 
+    // Offline messages
+    #offlineMessageBuffer = [];
+
     // Test Variables
     #timeout = 1000;
 
@@ -127,12 +130,13 @@ export class Realtime {
     /**
      * Connects to the websocket server
      */
-    connect(){
+    async connect(){
         this.SEVER_URL = `${this.baseUrl}/${this.namespace}`; 
 
         this.socket = io(this.SEVER_URL, {
             transports: [ "websocket", "polling" ], // Transport by priority
             reconnectionDelayMax: 500,
+            reconnectionAttempts: 240, // Basically try for 2 mins -> 120,000/500 = 240
             reconnection: true,
             extraHeaders: {
                 "api-key": this.api_key
@@ -220,6 +224,16 @@ export class Realtime {
 
             // Join rooms again
             await this.#rejoinRoom(); 
+
+            // Resend messages that couldn't be sent
+            var output = await this.#publishMessagesOnReconnect();
+
+            // Let the user know that the messages were sent
+            if(output.length > 0){
+                if(MESSAGE_RESEND in this.#event_func){
+                    this.#event_func[MESSAGE_RESEND](output);   
+                }
+            }
         });
 
         /**
@@ -227,6 +241,8 @@ export class Realtime {
          */
         this.socket.io.on("reconnect_attempt", (attempt) => {
             this.#log("[RECON_ATTEMPT] => " + attempt);
+
+            this.reconnected = false;
 
             if (attempt === 1){
                 if(RECONNECT in this.#event_func){
@@ -244,6 +260,9 @@ export class Realtime {
             if(RECONNECT in this.#event_func){
                 this.#event_func[RECONNECT](this.#RECONN_FAIL);   
             }
+
+            // Clearing out offline messages on failure to reconnect
+            this.#offlineMessageBuffer.length = 0;
         });
         
         /**
@@ -377,7 +396,7 @@ export class Realtime {
                 this.#event_func[topic] = func; 
 
                 if (![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
-                    this.#RECONNECTING, this.#RECONN_FAIL, ...this.#roomKeyEvents].includes(topic)){
+                    this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND, ...this.#roomKeyEvents].includes(topic)){
                         this.#topicMap.push(topic);
                 }
 
@@ -392,17 +411,41 @@ export class Realtime {
 
     /**
      * A method to send a message to a topic.
-     * Retry methods included
+     * Retry methods included. Stores messages in an array if offline.
      * @param {string} topic - Name of the room
      * @param {object} data - Data to send
      * @returns 
      */
     async publish(topic, data){
-        var retries = this.#getPublishRetry(); 
-        return await this.#retryTillSuccess(this.#publish, retries, 1, topic, data);
+        var messageId = crypto.randomUUID();
+
+        this.#log(`SOCKET CONNECTED => ${this.socket.connected}`);
+
+        if(this.socket.connected){
+            var retries = this.#getPublishRetry(); 
+            return await this.#retryTillSuccess(this.#publish, retries, 1, messageId, topic, data);
+        }else{
+            this.#offlineMessageBuffer.push({
+                "id": messageId,
+                "room": topic,
+                "data": data
+            });
+
+            return {
+                "message": {
+                    "id": messageId,
+                    "topic": topic,
+                    "message": data
+                },
+                "status": "PUBLISH_FAIL_TO_SEND",
+                "sent": false,
+                "connected": this.socket.connected,
+                "err": "Not connected to server"
+            };
+        }
     }
 
-    async #publish(topic, data){
+    async #publish(id, topic, data){
         var subscribed = false;
         var success = false;
         var ackTimeout = this.#getAckTimeout();
@@ -419,13 +462,19 @@ export class Realtime {
                 if(subscribed){
                     var start = Date.now()
                     var relayResponse = await this.socket.timeout(ackTimeout).emitWithAck("relay-to-room", {
-                        "id": crypto.randomUUID(),
+                        "id": id,
                         "room": topic,
                         "message": data
                     });
 
                     // RELAY_FAILURE will set sent = false
+                    relayResponse["message"] = {
+                        "id": id,
+                        "topic": topic,
+                        "message": data
+                    };
                     relayResponse["sent"] = relayResponse["status"] == "ACK_SUCCESS"; 
+                    relayResponse["connected"] = this.socket.connected;
 
                     var end = Date.now()
                     var latency = end - start;
@@ -434,8 +483,15 @@ export class Realtime {
                     this.#log(`Unable to send message, topic not subscribed to`);
 
                     relayResponse = relayResponse = {
+                        "message": {
+                            "id": id,
+                            "topic": topic,
+                            "message": data
+                        },
                         "status": "PUBLISH_FAIL_TO_SEND",
-                        "sent": false
+                        "sent": false,
+                        "connected": this.socket.connected,
+                        "message": `Unable to subscribe to topic ${topic}`
                     }
                 }
 
@@ -445,6 +501,7 @@ export class Realtime {
                 relayResponse = {
                     "status": "PUBLISH_INPUT_ERR", 
                     "sent": false,
+                    "connected": this.socket.connected,
                     "message": `topic is ${topic} || data is ${data}`
                 }
             }
@@ -452,8 +509,14 @@ export class Realtime {
             this.#log(err);
 
             relayResponse = {
+                "message": {
+                    "id": id,
+                    "topic": topic,
+                    "message": data
+                },
                 "status": "PUBLISH_FAIL_TO_SEND",
                 "sent": false,
+                "connected": this.socket.connected,
                 "err": err.message
             }
 
@@ -464,6 +527,33 @@ export class Realtime {
             success: success,
             output: relayResponse
         }
+    }
+
+    /**
+     * Method resends messages when the client successfully connects to the
+     * server again
+     * @returns - Array of success and failure messages
+     */
+    async #publishMessagesOnReconnect(){
+        var messageSentStatus = [];
+
+        for(let i = 0; i < this.#offlineMessageBuffer.length; i++){
+            let message = this.#offlineMessageBuffer[i];
+            
+            var id = message.id;
+            var topic = message.room;
+            var data = message.data;
+
+            var retries = this.#getPublishRetry(); 
+            var output = await this.#retryTillSuccess(this.#publish, retries, 1, id, topic, data);
+
+            messageSentStatus.push(output);
+        }
+
+        // Clearing out offline messages
+        this.#offlineMessageBuffer.length = 0;
+
+        return messageSentStatus;
     }
 
     // Room functions
@@ -479,7 +569,7 @@ export class Realtime {
         var ackTimeout = this.#getAckTimeout();
 
         try{
-            if (![CONNECTED, DISCONNECTED, ...this.#roomKeyEvents].includes(topic)){
+            if (this.isTopicValid(topic)){
                 // If not, connect and wait for an ack
                 var response = await this.socket.timeout(ackTimeout).emitWithAck("enter-room", {
                     "room": topic
@@ -562,9 +652,16 @@ export class Realtime {
     }
 
     // Utility functions
+
+    /**
+     * Checks if a topic can be used to send messages to.
+     * @param {string} topic 
+     * @returns 
+     */
     isTopicValid(topic){
         if(topic !== null && topic !== undefined && (typeof topic) == "string"){
-            return !this.#roomKeyEvents.includes(topic);
+            return ![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
+                this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND,...this.#roomKeyEvents].includes(topic);
         }else{
             return false;
         }
@@ -681,4 +778,5 @@ export class Realtime {
 
 export const CONNECTED = "CONNECTED";
 export const RECONNECT = "RECONNECT";
+export const MESSAGE_RESEND = "MESSAGE_RESEND";
 export const DISCONNECTED = "DISCONNECTED";
