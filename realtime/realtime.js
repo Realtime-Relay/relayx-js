@@ -138,7 +138,7 @@ export class Realtime {
             reconnectionDelayMax: 500,
             reconnectionAttempts: 240, // Basically try for 2 mins -> 120,000/500 = 240
             reconnection: true,
-            extraHeaders: {
+            auth: {
                 "api-key": this.api_key
             },
             parser: msgPackParser
