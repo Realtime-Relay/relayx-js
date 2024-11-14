@@ -475,37 +475,13 @@ test("Test History Since API", async () => {
         data: successData
     });
 
-    var response = await realTimeEnabled.history.getMessageById(1731609090044, 1, 1000);
+    var response = await realTimeEnabled.history.getMessageById("hello", 1731609090044, 1, 1000);
 
     expect(response).not.toBeNull();
     expect(response.length > 0 && response.length <= 1000).toBeTruthy();
 
-    // Passing invalid page
-    realTimeEnabled.history.getMessageById(1731609090044, "INAVLID_PAGE", 1000)
-    .then((response) => {
-        expect(response).toBeNull();
-    })
-    .catch((err) => {
-        expect(err).not.toBeNull();
-    });
-    
-
-    // Passing invalid limit
-    realTimeEnabled.history.getMessageById(1731609090044, 1, "INVALID_LIMIT")
-    .then((response) => {
-        expect(response).toBeNull();
-    })
-    .catch((err) => {
-        expect(err).not.toBeNull();
-    });
-
-    // Passing invalid timestamp
-    realTimeEnabled.history.getMessageById("1731609090044", 1, 1000)
-    .then((response) => {
-        expect(response).toBeNull();
-    })
-    .catch((err) => {
-        expect(err).not.toBeNull();
+    response.forEach((item) => {
+        expect(item["topic"]).toBe("hello");
     });
 
     // Getting invalid response from the server

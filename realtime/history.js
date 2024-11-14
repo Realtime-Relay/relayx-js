@@ -28,33 +28,42 @@ export class History{
      * @param {number} limit - limit per page
      * @returns - Message array
      */
-    async getMessagesSince(timestamp, page, limit){
-        if(timestamp == null || timestamp == undefined){
-            throw new Error("$timestamp variable missing in getMessagesSince()");
+    async getMessagesSince(topic, timestamp, page, limit){
+        if(topic == null || topic == undefined){
+            return new Error("$topic variable missing in getMessagesSince()");
         }else{
-            if(!Number.isInteger(timestamp) || !Number.isNaN(timestamp)){
-                throw new Error("$timestamp is either NaN or not an invalid integer");
+            if(typeof topic !== "string"){
+                return new Error("$topic is not a string");
+            }
+        }
+
+        if(timestamp == null || timestamp == undefined){
+            return new Error("$timestamp variable missing in getMessagesSince()");
+        }else{
+            if(!Number.isInteger(timestamp) && !Number.isNaN(timestamp)){
+                return new Error("$timestamp is either NaN or not an invalid integer");
             }
         }
 
         if(page == null || page == undefined){
-            throw new Error("$page variable missing in getMessagesSince()");
+            return new Error("$page variable missing in getMessagesSince()");
         }else{
-            if(!Number.isInteger(page) || !Number.isNaN(page)){
-                throw new Error("$page is either NaN or not an invalid integer");
+            if(!Number.isInteger(page) && !Number.isNaN(page)){
+                return new Error("$page is either NaN or not an invalid integer");
             }
         }
 
         if(limit == null || limit == undefined){
-            throw new Error("$limit variable missing in getMessagesSince()");
+            return new Error("$limit variable missing in getMessagesSince()");
         }else{
-            if(!Number.isInteger(limit) || !Number.isNaN(limit)){
-                throw new Error("$limit is either NaN or not an invalid integer");
+            if(!Number.isInteger(limit) && !Number.isNaN(limit)){
+                console.log("$limit is either NaN or not an invalid integer")
+                return new Error("$limit is either NaN or not an invalid integer");
             }
         }
 
         try{
-            var response = await axios.get(this.#baseUrl + `/history/since?timestamp=${timestamp}&page=${page}&limit=${limit}`,{
+            var response = await axios.get(this.#baseUrl + `/history/since?topic=${topic}&timestamp=${timestamp}&page=${page}&limit=${limit}`,{
                 headers: {
                     "Authorization": `Bearer ${this.#api_key}`
                 }
@@ -69,7 +78,7 @@ export class History{
                 return null;
             }
        }catch(err){
-            throw new Error(err.message);
+            throw Error(err.message);
        }
     }
 
