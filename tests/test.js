@@ -382,3 +382,59 @@ test("Test isTopicValidMethod()", () => {
         expect(valid).toBeTruthy();
     });
 });
+
+test("Test History API: Get By ID", async () => {
+    // Test checks success response
+    const successData = {
+        "status": "SUCCESS", 
+        "data": {
+            id: '3341c5b0-d415-49a6-b5d5-3eccb6cbb858',
+            timestamp: 1731601490044,
+            topic: 'hello',
+            message: { data: 'heyyywsdasda' }
+        }
+    };
+
+    axios.get.mockResolvedValue({
+        data: successData
+    });
+
+    var response = await realTimeEnabled.history.getMessageById(successData["data"]["id"]);
+
+    expect(response["id"]).toBe(successData["data"]["id"]);
+    expect(response["timestamp"]).toBe(successData["data"]["timestamp"]);
+    expect(response["topic"]).toBe(successData["data"]["topic"]);
+    expect(response["message"]).toBe(successData["data"]["message"]);
+
+    // Now passing in a null & undefined message id
+    response = await realTimeEnabled.history.getMessageById(null);
+    expect(response).toBeNull();
+
+    response = await realTimeEnabled.history.getMessageById(undefined);
+    expect(response).toBeNull();
+
+    // Getting invalid response from the server
+    var invalidData = {
+        "status": "FAIL", 
+        "data": {}
+    };
+
+    axios.get.mockResolvedValue({
+        data: invalidData
+    });
+
+    var response = await realTimeEnabled.history.getMessageById(successData["data"]["id"]);
+    expect(response).toBeNull();
+
+    // Do not send status message
+    invalidData = {
+        "data": {}
+    };
+
+    axios.get.mockResolvedValue({
+        data: invalidData
+    });
+
+    var response = await realTimeEnabled.history.getMessageById(successData["data"]["id"]);
+    expect(response).toBeNull();
+});

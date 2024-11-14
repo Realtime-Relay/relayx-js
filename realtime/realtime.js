@@ -1,8 +1,11 @@
 import { io } from "socket.io-client";
+import { History } from "./history.js";
 import axios from 'axios';
 import * as msgPackParser from 'socket.io-msgpack-parser';
 
 export class Realtime {
+
+    #baseUrl = "";
 
     #event_func = {}; 
     #topicMap = []; 
@@ -33,12 +36,18 @@ export class Realtime {
     // Offline messages
     #offlineMessageBuffer = [];
 
+    // History API
+    history = null;
+
     // Test Variables
     #timeout = 1000;
 
     constructor(api_key){
         this.api_key = api_key;
         this.namespace = ""; 
+
+        // Init History API
+        this.history = new History(api_key);
     }
 
     /*
@@ -85,15 +94,18 @@ export class Realtime {
         this.staging = staging; 
 
         if (staging !== undefined || staging !== null){
-            this.baseUrl = staging ? "http://127.0.0.1:3000" : "http://128.199.176.185:3000";
+            this.#baseUrl = staging ? "http://127.0.0.1:3000" : "http://128.199.176.185:3000";
         }else{
-            this.baseUrl = "http://128.199.176.185:3000";
+            this.#baseUrl = "http://128.199.176.185:3000";
         }
 
-        this.#log(this.baseUrl);
+        this.#log(this.#baseUrl);
         this.#log(opts);
 
         this.opts = opts;
+
+        // Init History
+        this.history.init(staging, opts?.debug);
 
         if (this.api_key !== null && this.api_key !== undefined){
             this.namespace = await this.#getNameSpace();
@@ -108,7 +120,7 @@ export class Realtime {
      */
     async #getNameSpace() {
        try{
-            var response = await axios.get(this.baseUrl + "/get-namespace",{
+            var response = await axios.get(this.#baseUrl + "/get-namespace",{
                 headers: {
                     "Authorization": `Bearer ${this.api_key}`
                 }
@@ -131,7 +143,7 @@ export class Realtime {
      * Connects to the websocket server
      */
     async connect(){
-        this.SEVER_URL = `${this.baseUrl}/${this.namespace}`; 
+        this.SEVER_URL = `${this.#baseUrl}/${this.namespace}`; 
 
         this.socket = io(this.SEVER_URL, {
             transports: [ "websocket", "polling" ], // Transport by priority
@@ -182,7 +194,7 @@ export class Realtime {
                 }
             }
 
-            await this.#sleep(2);
+            await this.sleep(2);
             await this.socket.emitWithAck("room-message-ack", data); 
         });
 
@@ -667,7 +679,7 @@ export class Realtime {
         }
     }
 
-    #sleep(ms) {
+    sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
@@ -721,11 +733,11 @@ export class Realtime {
         for(let i = 1; i <= count; i++){
             this.#log(`Attempt ${i} at executing ${func.name}()`)
 
-            await this.#sleep(delay)
+            await this.sleep(delay)
 
             output = await func(...args); 
             success = output.success; 
-            this.#log(output);
+            // this.#log(output);
 
             methodDataOutput = output.output; 
 
