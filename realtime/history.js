@@ -22,6 +22,58 @@ export class History{
     }
 
     /**
+     * Get message from DB since a $timestamp
+     * @param {number} timestamp - unix timestamp
+     * @param {number} page - page number of pagination
+     * @param {number} limit - limit per page
+     * @returns - Message array
+     */
+    async getMessagesSince(timestamp, page, limit){
+        if(timestamp == null || timestamp == undefined){
+            throw new Error("$timestamp variable missing in getMessagesSince()");
+        }else{
+            if(!Number.isInteger(timestamp) || !Number.isNaN(timestamp)){
+                throw new Error("$timestamp is either NaN or not an invalid integer");
+            }
+        }
+
+        if(page == null || page == undefined){
+            throw new Error("$page variable missing in getMessagesSince()");
+        }else{
+            if(!Number.isInteger(page) || !Number.isNaN(page)){
+                throw new Error("$page is either NaN or not an invalid integer");
+            }
+        }
+
+        if(limit == null || limit == undefined){
+            throw new Error("$limit variable missing in getMessagesSince()");
+        }else{
+            if(!Number.isInteger(limit) || !Number.isNaN(limit)){
+                throw new Error("$limit is either NaN or not an invalid integer");
+            }
+        }
+
+        try{
+            var response = await axios.get(this.#baseUrl + `/history/since?timestamp=${timestamp}&page=${page}&limit=${limit}`,{
+                headers: {
+                    "Authorization": `Bearer ${this.#api_key}`
+                }
+            });
+
+            var data = response.data
+            this.#log(data);
+
+            if (data?.status === "SUCCESS"){
+                return data.data;
+            }else{
+                return null;
+            }
+       }catch(err){
+            throw new Error(err.message);
+       }
+    }
+
+    /**
      * Get message from DB by ID
      * @param {string} id - ID of the message
      * @returns - Message object

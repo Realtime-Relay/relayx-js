@@ -438,3 +438,98 @@ test("Test History API: Get By ID", async () => {
     var response = await realTimeEnabled.history.getMessageById(successData["data"]["id"]);
     expect(response).toBeNull();
 });
+
+test("Test History Since API", async () => {
+    // Test checks success response
+    const successData = {
+        "status": "SUCCESS", 
+        "data": [
+            {
+                id: '3341c5b0-d415-49a6-b5d5-3eccb6cbb858',
+                timestamp: 1731601490044,
+                topic: 'hello',
+                message: { data: 'hey 1' }
+            },
+            {
+                id: '123add-d415-49a6-b5d5-3eccb6cbb858',
+                timestamp: 1731601700044,
+                topic: 'hello',
+                message: { data: 'hey 2' }
+            },
+            {
+                id: 'asdasda-d415-49a6-b5d5-3eccb6cbb858',
+                timestamp: 1731608090044,
+                topic: 'hello',
+                message: { data: 'hey 3' }
+            },
+            {
+                id: 'gfhfgh-d415-49a6-b5d5-3eccb6cbb858',
+                timestamp: 1731609090044,
+                topic: 'hello',
+                message: { data: 'hey 4' }
+            }
+        ]
+    };
+
+    axios.get.mockResolvedValue({
+        data: successData
+    });
+
+    var response = await realTimeEnabled.history.getMessageById(1731609090044, 1, 1000);
+
+    expect(response).not.toBeNull();
+    expect(response.length > 0 && response.length <= 1000).toBeTruthy();
+
+    // Passing invalid page
+    realTimeEnabled.history.getMessageById(1731609090044, "INAVLID_PAGE", 1000)
+    .then((response) => {
+        expect(response).toBeNull();
+    })
+    .catch((err) => {
+        expect(err).not.toBeNull();
+    });
+    
+
+    // Passing invalid limit
+    realTimeEnabled.history.getMessageById(1731609090044, 1, "INVALID_LIMIT")
+    .then((response) => {
+        expect(response).toBeNull();
+    })
+    .catch((err) => {
+        expect(err).not.toBeNull();
+    });
+
+    // Passing invalid timestamp
+    realTimeEnabled.history.getMessageById("1731609090044", 1, 1000)
+    .then((response) => {
+        expect(response).toBeNull();
+    })
+    .catch((err) => {
+        expect(err).not.toBeNull();
+    });
+
+    // Getting invalid response from the server
+    var invalidData = {
+        "status": "FAIL", 
+        "data": {}
+    };
+
+    axios.get.mockResolvedValue({
+        data: invalidData
+    });
+
+    var response = await realTimeEnabled.history.getMessageById(1731609090044, 1, 1000);
+    expect(response).toBeNull();
+
+    // Do not send status message
+    invalidData = {
+        "data": {}
+    };
+
+    axios.get.mockResolvedValue({
+        data: invalidData
+    });
+
+    var response = await realTimeEnabled.history.getMessageById(1731609090044, 1, 1000);
+    expect(response).toBeNull();
+});
