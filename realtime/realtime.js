@@ -119,14 +119,19 @@ export class Realtime {
      * @returns {string} namespace value. Null if failed to retreive
      */
     async #getNameSpace() {
+        var startTime = Date.now();
+        var urlPart = "/get-namespace"
+
        try{
-            var response = await axios.get(this.#baseUrl + "/get-namespace",{
+            var response = await axios.get(this.#baseUrl + urlPart,{
                 headers: {
                     "Authorization": `Bearer ${this.api_key}`
                 }
             });
 
             var data = response.data
+
+            this.#logRESTResponseTime(startTime, urlPart);
 
             if (data?.status === "SUCCESS"){
                 return data.data.namespace;
@@ -356,6 +361,8 @@ export class Realtime {
         var response = null; 
         var ackTimeout = this.#getAckTimeout()
 
+        var startTime = Date.now();
+
         try{
             if (this.#topicMap.includes(topic)){
                 response = await this.socket.timeout(ackTimeout).emitWithAck("exit-room", {
@@ -381,6 +388,12 @@ export class Realtime {
 
             success = false;
         }
+
+        this.#logSocketResponseTime(startTime, {
+            "type": "topic_unsubscribe", // TODO: Document
+            "status": response["status"],
+            "room": topic
+        })
 
         return {
             success: success,
@@ -462,6 +475,10 @@ export class Realtime {
         var success = false;
         var ackTimeout = this.#getAckTimeout();
 
+        var relayResponse = null;
+        
+        var processStart = Date.now();
+
         try{
             if ((topic !== null && topic !== undefined) && (data !== null && data !== undefined)){
                 if(!this.#topicMap.includes(topic)){
@@ -471,9 +488,14 @@ export class Realtime {
                     subscribed = true;
                 }
 
+                this.#logSocketResponseTime(processStart, {
+                    "type": "topic_subscribe_only" // TODO: Document
+                })
+
                 if(subscribed){
-                    var start = Date.now()
-                    var relayResponse = await this.socket.timeout(ackTimeout).emitWithAck("relay-to-room", {
+                    var start = Date.now();
+
+                    relayResponse = await this.socket.timeout(ackTimeout).emitWithAck("relay-to-room", {
                         "id": id,
                         "room": topic,
                         "message": data
@@ -491,10 +513,15 @@ export class Realtime {
                     var end = Date.now()
                     var latency = end - start;
                     this.#log(`LATENCY => ${latency} ms`);
+
+                    // Log the metrics
+                    this.#logSocketResponseTime(start, {
+                        "type": "publish_only" // TODO: Document
+                    });
                 }else{
                     this.#log(`Unable to send message, topic not subscribed to`);
 
-                    relayResponse = relayResponse = {
+                    relayResponse = {
                         "message": {
                             "id": id,
                             "topic": topic,
@@ -535,6 +562,14 @@ export class Realtime {
             success = false;
         }
 
+        this.#logSocketResponseTime(processStart, {
+            "type": "publish_full", // TODO: Document
+            "status": relayResponse["status"],
+            "sent": relayResponse["sent"],
+            "connected": relayResponse["connected"],
+            "err": relayResponse["err"]
+        })
+
         return {
             success: success,
             output: relayResponse
@@ -556,8 +591,16 @@ export class Realtime {
             var topic = message.room;
             var data = message.data;
 
+            // Metrics logging
+            var startTime = Date.now();
+
             var retries = this.#getPublishRetry(); 
             var output = await this.#retryTillSuccess(this.#publish, retries, 1, id, topic, data);
+
+            // Log the metrics
+            this.#logSocketResponseTime(startTime, {
+                "type": "publish_retry_on_connect" // TODO: Document
+            });
 
             messageSentStatus.push(output);
         }
@@ -580,10 +623,14 @@ export class Realtime {
         var subscribed = false;
         var ackTimeout = this.#getAckTimeout();
 
+        var response = null;
+
+        var startTime = Date.now();
+
         try{
             if (this.isTopicValid(topic)){
                 // If not, connect and wait for an ack
-                var response = await this.socket.timeout(ackTimeout).emitWithAck("enter-room", {
+                response = await this.socket.timeout(ackTimeout).emitWithAck("enter-room", {
                     "room": topic
                 });
     
@@ -601,8 +648,19 @@ export class Realtime {
         }catch(err){
             this.#log(err);
 
+            response = {
+                "status": "ROOM_JOIN_ERR",
+                "err": err.message
+            }
+
             subscribed = false;
         }
+
+        this.#logSocketResponseTime(startTime, {
+            "type": "create_or_join_room", // TODO: Document
+            "status": response["status"],
+            "err": response["err"]
+        });
 
         return {
             success: subscribed,
@@ -617,12 +675,20 @@ export class Realtime {
      */
     async #rejoinRoom(){
         this.#topicMap.forEach(async (topic) => {
+            var startTime = Date.now();
+
             // If not, connect and wait for an ack
             var subscribed = await this.#retryTillSuccess(this.#createOrJoinRoom, 5, 1, topic);
 
             this.#event_func[topic]({
                 "type": "RECONNECTION_STATUS",
                 "initialized_topic": subscribed
+            });
+
+            this.#logSocketResponseTime(startTime, {
+                "type": "rejoin_room", // TODO: Document
+                "room": topic,
+                "subscribed": subscribed
             });
         });
     }
@@ -752,6 +818,48 @@ export class Realtime {
         }
 
         return methodDataOutput;
+    }
+
+    /**
+     * Logs client side REST API response time and sends
+     * it to the server for logging
+     * @param {unix timestamp} startTime 
+     * @param {string} url 
+     */
+    async #logRESTResponseTime(startTime, url){
+        var responseTime = Date.now() - startTime;
+
+        var data = {
+            "url": url,
+            "response_time": responseTime
+        }
+
+        await axios.post(this.#baseUrl + "/metrics/log", data, {
+            headers: {
+                "Authorization": `Bearer ${this.api_key}`
+            }
+        });
+    }
+
+    /**
+     * Logs client side Socket API response time and sends
+     * it to the server for logging
+     * @param {unix timestamp} startTime 
+     * @param {JSON} data 
+     */
+    async #logSocketResponseTime(startTime, data){
+        var responseTime = Date.now() - startTime;
+
+        var data = {
+            "data": data,
+            "response_time": responseTime
+        }
+
+        await axios.post(this.#baseUrl + "/metrics/socket_log", data, {
+            headers: {
+                "Authorization": `Bearer ${this.api_key}`
+            }
+        });
     }
 
     // Exposure for tests

@@ -63,7 +63,10 @@ export class History{
         }
 
         try{
-            var response = await axios.get(this.#baseUrl + `/history/since?topic=${topic}&timestamp=${timestamp}&page=${page}&limit=${limit}`,{
+            var startTime = Date.now();
+            var urlPart = `/history/since?topic=${topic}&timestamp=${timestamp}&page=${page}&limit=${limit}`
+
+            var response = await axios.get(this.#baseUrl + urlPart,{
                 headers: {
                     "Authorization": `Bearer ${this.#api_key}`
                 }
@@ -71,6 +74,8 @@ export class History{
 
             var data = response.data
             this.#log(data);
+
+            this.#logResponseTime(startTime, urlPart);
 
             if (data?.status === "SUCCESS"){
                 return data.data;
@@ -88,9 +93,12 @@ export class History{
      * @returns - Message object
      */
     async getMessageById(id){
+        var startTime = Date.now();
+        var urlPart = `/history/message-by-id?id=${id}`;
+
         if(id !== null && id !== undefined){
             try{
-                var response = await axios.get(this.#baseUrl + `/history/message-by-id?id=${id}`,{
+                var response = await axios.get(this.#baseUrl + urlPart,{
                     headers: {
                         "Authorization": `Bearer ${this.#api_key}`
                     }
@@ -98,6 +106,8 @@ export class History{
     
                 var data = response.data
                 this.#log(data);
+
+                this.#logResponseTime(startTime, urlPart);
     
                 if (data?.status === "SUCCESS"){
                     return data.data;
@@ -130,6 +140,21 @@ export class History{
                 console.log(msg);
             }
         }
+    }
+
+    async #logResponseTime(startTime, url){
+        var responseTime = Date.now() - startTime;
+
+        var data = {
+            "url": url,
+            "response_time": responseTime
+        }
+
+        await axios.post(this.#baseUrl + "/metrics/log", data, {
+            headers: {
+                "Authorization": `Bearer ${this.#api_key}`
+            }
+        });
     }
 
 }
