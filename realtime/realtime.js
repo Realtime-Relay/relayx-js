@@ -122,46 +122,28 @@ export class Realtime {
         var startTime = Date.now();
         var urlPart = "/get-namespace"
 
-    //    try{
-    //         var response = await axios.get(this.#baseUrl + urlPart,{
-    //             headers: {
-    //                 "Authorization": `Bearer ${this.api_key}`
-    //             }
-    //         });
+       try{
+            var response = await axios.get(this.#baseUrl + urlPart,{
+                headers: {
+                    "Authorization": `Bearer ${this.api_key}`
+                }
+            });
 
-    //         var data = response.data
+            var data = response.data
 
-    //         this.#log(data)
+            this.#log(data)
 
-    //         this.#logRESTResponseTime(startTime, urlPart);
+            this.#logRESTResponseTime(startTime, urlPart);
 
-    //         if (data?.status === "SUCCESS"){
-    //             return data.data.namespace;
-    //         }else{
-    //             return null;
-    //         }
-    //    }catch(err){
-    //         console.log(err.message)
-    //         throw new Error(err.message);
-    //    }
-
-        var response = await axios.get(this.#baseUrl + urlPart,{
-            headers: {
-                "Authorization": `Bearer ${this.api_key}`
+            if (data?.status === "SUCCESS"){
+                return data.data.namespace;
+            }else{
+                return null;
             }
-        });
-
-        var data = response.data
-
-        // this.#log(data)
-
-        this.#logRESTResponseTime(startTime, urlPart);
-
-        if (data?.status === "SUCCESS"){
-            return data.data.namespace;
-        }else{
-            return null;
-        }
+       }catch(err){
+            console.log(err.message)
+            throw new Error(err.message);
+       }
     }
     
 
@@ -857,18 +839,18 @@ export class Realtime {
      * @param {string} url 
      */
     async #logRESTResponseTime(startTime, url){
-        // var responseTime = Date.now() - startTime;
+        var responseTime = Date.now() - startTime;
 
-        // var data = {
-        //     "url": url,
-        //     "response_time": responseTime
-        // }
+        var data = {
+            "url": url,
+            "response_time": responseTime
+        }
 
-        // await axios.post(this.#baseUrl + "/metrics/log", data, {
-        //     headers: {
-        //         "Authorization": `Bearer ${this.api_key}`
-        //     }
-        // });
+        await axios.post(this.#baseUrl + "/metrics/log", data, {
+            headers: {
+                "Authorization": `Bearer ${this.api_key}`
+            }
+        });
     }
 
     /**
@@ -878,18 +860,18 @@ export class Realtime {
      * @param {JSON} data 
      */
     async #logSocketResponseTime(startTime, data){
-        // var responseTime = Date.now() - startTime;
+        var responseTime = Date.now() - startTime;
 
-        // var data = {
-        //     "data": data,
-        //     "response_time": responseTime
-        // }
+        var data = {
+            "data": data,
+            "response_time": responseTime
+        }
 
-        // await axios.post(this.#baseUrl + "/metrics/socket_log", data, {
-        //     headers: {
-        //         "Authorization": `Bearer ${this.api_key}`
-        //     }
-        // });
+        await axios.post(this.#baseUrl + "/metrics/socket_log", data, {
+            headers: {
+                "Authorization": `Bearer ${this.api_key}`
+            }
+        });
     }
 
     // Exposure for tests
