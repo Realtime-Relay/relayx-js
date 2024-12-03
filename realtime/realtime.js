@@ -94,7 +94,7 @@ export class Realtime {
         this.staging = staging; 
 
         if (staging !== undefined || staging !== null){
-            this.#baseUrl = staging ? "http://127.0.0.1:3000" : "http://128.199.176.185:3000";
+            this.#baseUrl = staging ? "http://localhost:3000" : "http://128.199.176.185:3000";
         }else{
             this.#baseUrl = "http://128.199.176.185:3000";
         }
@@ -122,25 +122,46 @@ export class Realtime {
         var startTime = Date.now();
         var urlPart = "/get-namespace"
 
-       try{
-            var response = await axios.get(this.#baseUrl + urlPart,{
-                headers: {
-                    "Authorization": `Bearer ${this.api_key}`
-                }
-            });
+    //    try{
+    //         var response = await axios.get(this.#baseUrl + urlPart,{
+    //             headers: {
+    //                 "Authorization": `Bearer ${this.api_key}`
+    //             }
+    //         });
 
-            var data = response.data
+    //         var data = response.data
 
-            this.#logRESTResponseTime(startTime, urlPart);
+    //         this.#log(data)
 
-            if (data?.status === "SUCCESS"){
-                return data.data.namespace;
-            }else{
-                return null;
+    //         this.#logRESTResponseTime(startTime, urlPart);
+
+    //         if (data?.status === "SUCCESS"){
+    //             return data.data.namespace;
+    //         }else{
+    //             return null;
+    //         }
+    //    }catch(err){
+    //         console.log(err.message)
+    //         throw new Error(err.message);
+    //    }
+
+        var response = await axios.get(this.#baseUrl + urlPart,{
+            headers: {
+                "Authorization": `Bearer ${this.api_key}`
             }
-       }catch(err){
-            throw new Error(err.message);
-       }
+        });
+
+        var data = response.data
+
+        // this.#log(data)
+
+        this.#logRESTResponseTime(startTime, urlPart);
+
+        if (data?.status === "SUCCESS"){
+            return data.data.namespace;
+        }else{
+            return null;
+        }
     }
     
 
@@ -155,6 +176,9 @@ export class Realtime {
             reconnectionDelayMax: 500,
             reconnectionAttempts: 240, // Basically try for 2 mins -> 120,000/500 = 240
             reconnection: true,
+            cors: {
+                origin: "*"
+            },
             auth: {
                 "api-key": this.api_key
             },
@@ -199,8 +223,8 @@ export class Realtime {
                 }
             }
 
-            await this.sleep(2);
-            await this.socket.emitWithAck("room-message-ack", data); 
+            // await this.sleep(2);
+            // await this.socket.emitWithAck("room-message-ack", data); 
         });
 
         /**
@@ -441,14 +465,14 @@ export class Realtime {
      * @param {object} data - Data to send
      * @returns 
      */
-    async publish(topic, data){
+    async publish(topic, data, callback){
         var messageId = crypto.randomUUID();
 
         this.#log(`SOCKET CONNECTED => ${this.socket.connected}`);
 
         if(this.socket.connected){
             var retries = this.#getPublishRetry(); 
-            return await this.#retryTillSuccess(this.#publish, retries, 1, messageId, topic, data);
+            return await this.#retryTillSuccess(this.#publish, retries, 1, messageId, topic, data, callback);
         }else{
             this.#offlineMessageBuffer.push({
                 "id": messageId,
@@ -470,7 +494,7 @@ export class Realtime {
         }
     }
 
-    async #publish(id, topic, data){
+    async #publish(id, topic, data, callback){
         var subscribed = false;
         var success = false;
         var ackTimeout = this.#getAckTimeout();
@@ -514,10 +538,16 @@ export class Realtime {
                     var latency = end - start;
                     this.#log(`LATENCY => ${latency} ms`);
 
+                    if(callback !== null && callback !== undefined){
+                        callback(latency);
+                    }
+
                     // Log the metrics
                     this.#logSocketResponseTime(start, {
                         "type": "publish_only" // TODO: Document
                     });
+
+
                 }else{
                     this.#log(`Unable to send message, topic not subscribed to`);
 
@@ -827,18 +857,18 @@ export class Realtime {
      * @param {string} url 
      */
     async #logRESTResponseTime(startTime, url){
-        var responseTime = Date.now() - startTime;
+        // var responseTime = Date.now() - startTime;
 
-        var data = {
-            "url": url,
-            "response_time": responseTime
-        }
+        // var data = {
+        //     "url": url,
+        //     "response_time": responseTime
+        // }
 
-        await axios.post(this.#baseUrl + "/metrics/log", data, {
-            headers: {
-                "Authorization": `Bearer ${this.api_key}`
-            }
-        });
+        // await axios.post(this.#baseUrl + "/metrics/log", data, {
+        //     headers: {
+        //         "Authorization": `Bearer ${this.api_key}`
+        //     }
+        // });
     }
 
     /**
@@ -848,18 +878,18 @@ export class Realtime {
      * @param {JSON} data 
      */
     async #logSocketResponseTime(startTime, data){
-        var responseTime = Date.now() - startTime;
+        // var responseTime = Date.now() - startTime;
 
-        var data = {
-            "data": data,
-            "response_time": responseTime
-        }
+        // var data = {
+        //     "data": data,
+        //     "response_time": responseTime
+        // }
 
-        await axios.post(this.#baseUrl + "/metrics/socket_log", data, {
-            headers: {
-                "Authorization": `Bearer ${this.api_key}`
-            }
-        });
+        // await axios.post(this.#baseUrl + "/metrics/socket_log", data, {
+        //     headers: {
+        //         "Authorization": `Bearer ${this.api_key}`
+        //     }
+        // });
     }
 
     // Exposure for tests
