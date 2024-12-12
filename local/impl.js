@@ -27,7 +27,7 @@ async function run(){
     // await throttle.start(options["fois"]);
 
     var realtime = new Realtime("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiQXJqdW4iLCJwcm9qZWN0X2lkIjoidGVzdF9wcm9qZWN0Iiwib3JnYW5pemF0aW9uIjoiYmV5b25kX3JvYml0aWNzIiwiaXNfdmFsaWQiOnRydWUsImlhdCI6MTczMDczNTUzOX0.AMkp492uQC0BgPjcA3cy8FId9gGw8nHyZHDK5o3MyMk");
-    await realtime.init(true, {
+    await realtime.init({
         max_retries: 2,
         debug: true
     });
@@ -45,12 +45,16 @@ async function run(){
         console.log(`[IMPL] RECONNECT => ${status}`)
     });
 
-    realtime.on(DISCONNECTED, (reason) => {
-        console.log(`[IMPL] DISONNECT => ${reason}`)
+    realtime.on(DISCONNECTED, () => {
+        console.log(`[IMPL] DISONNECT`)
     });
 
-    realtime.on("hello", (data) => {
+    await realtime.on("hello", (data) => {
         console.log("hello", data);
+    });
+
+    await realtime.on("hello1", (data) => {
+        console.log("hello1", data);
     });
 
     realtime.on(MESSAGE_RESEND, (data) => {
@@ -72,13 +76,28 @@ async function run(){
 
             var history = await realtime.history.getMessagesSince("hello", since, 1, 1000);
             console.log(history);
-        }else{
-            var output = await realtime.publish("hello", {
-                "data": input
-            });
-            console.log(output);
+        }else if(input == "off"){
+            rl.question("topic to off(): ", async (topic) => {
+                await realtime.off(topic);
+                console.log("off() executed")
+            })
 
-            await realtime.sleep(1000);
+            
+        }else if(input == "close"){
+            realtime.close();
+            console.log("Connection closed");
+        }else if(input == "on"){
+            rl.question("topic: ", async (topic) => {
+                await realtime.on(topic, (data) => {
+                    console.log(topic, data);
+                });
+            })
+        }else{
+            rl.question("topic: ", async (topic) => {
+                var output = await realtime.publish(topic, {
+                    "data": input
+                });
+            })
 
             // var history = await realtime.history.getMessageById(output["message"]["id"]);
             // console.log(history);
