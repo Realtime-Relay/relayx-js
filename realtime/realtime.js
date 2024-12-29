@@ -1,7 +1,8 @@
 import { History } from "./history.js";
 import axios from 'axios';
-import { connect, JSONCodec, Events, DebugEvents, AckPolicy, ReplayPolicy } from "nats";
+import { connect, JSONCodec, Events, DebugEvents, AckPolicy, ReplayPolicy, credsAuthenticator } from "nats";
 import { DeliverPolicy, jetstream, jetstreamManager } from "@nats-io/jetstream";
+import { readFileSync } from "fs"
 
 export class Realtime {
 
@@ -153,7 +154,12 @@ export class Realtime {
      * Connects to the websocket server
      */
     async connect(){
+        var errCode = null;
         this.SEVER_URL = this.#baseUrl;
+
+        var credsFile = await readFileSync("relay.creds", "utf8");
+        credsFile = new TextEncoder().encode(credsFile);
+        var credsAuth = credsAuthenticator(credsFile);
 
         try{
             this.#natsClient = await connect({ 
@@ -161,20 +167,22 @@ export class Realtime {
                 noEcho: true,
                 maxReconnectAttempts: 1200,
                 reconnect: true,
-                reconnectTimeWait: 1000
+                reconnectTimeWait: 1000,
+                authenticator: credsAuth
             });
 
             this.#jsManager = await jetstreamManager(this.#natsClient);
-            this.#jetstream = jetstream(this.#natsClient);
+            this.#jetstream = await jetstream(this.#natsClient);
 
             this.connected = true;
         }catch(err){
+            this.#log("ERR")
             this.#log(err);
 
             this.connected = false;
         }
 
-        if (this.connected = true){
+        if (this.connected == true){
             this.#log("Connected to server!");
 
             // Callback on client side
@@ -183,76 +191,76 @@ export class Realtime {
                     this.#event_func[CONNECTED]()
                 }
             }
-        }
 
-        this.#natsClient.closed().then(() => {
-            this.#log("the connection closed!");
-          });
-          
-        (async () => {
-            for await (const s of this.#natsClient.status()) {
-            this.#log(s.type)
+            this.#natsClient.closed().then(() => {
+                this.#log("the connection closed!");
+            });
+            
+            (async () => {
+                for await (const s of this.#natsClient.status()) {
+                this.#log(s.type)
 
-            switch (s.type) {
-                case Events.Disconnect:
-                    this.#log(`client disconnected - ${s.data}`);
+                switch (s.type) {
+                    case Events.Disconnect:
+                        this.#log(`client disconnected - ${s.data}`);
 
-                    this.connected = false;
-                    this.#streamTracker = []; 
-                    this.#consumerMap = {};
+                        this.connected = false;
+                        this.#streamTracker = []; 
+                        this.#consumerMap = {};
 
-                    if (DISCONNECTED in this.#event_func){
-                        if (this.#event_func[DISCONNECTED] !== null || this.#event_func[DISCONNECTED] !== undefined){
-                            this.#event_func[DISCONNECTED]()
+                        if (DISCONNECTED in this.#event_func){
+                            if (this.#event_func[DISCONNECTED] !== null || this.#event_func[DISCONNECTED] !== undefined){
+                                this.#event_func[DISCONNECTED]()
+                            }
                         }
-                    }
-                break;
-                case Events.LDM:
-                    this.#log("client has been requested to reconnect");
-                break;
-                case Events.Update:
-                    this.#log(`client received a cluster update - `);
-                    this.#log(s.data)
-                break;
-                case Events.Reconnect:
-                    this.#log(`client reconnected -`);
-                    this.#log(s.data)
+                    break;
+                    case Events.LDM:
+                        this.#log("client has been requested to reconnect");
+                    break;
+                    case Events.Update:
+                        this.#log(`client received a cluster update - `);
+                        this.#log(s.data)
+                    break;
+                    case Events.Reconnect:
+                        this.#log(`client reconnected -`);
+                        this.#log(s.data)
 
-                    this.reconnecting = false;
-                    this.connected = true;
+                        this.reconnecting = false;
+                        this.connected = true;
 
-                    this.#subscribeToTopics();
+                        this.#subscribeToTopics();
 
-                    if(RECONNECT in this.#event_func){
-                        this.#event_func[RECONNECT](this.#RECONNECTED);   
-                    }
+                        if(RECONNECT in this.#event_func){
+                            this.#event_func[RECONNECT](this.#RECONNECTED);   
+                        }
 
-                    // Resend any messages sent while client was offline
-                    this.#publishMessagesOnReconnect();
-                break;
-                case Events.Error:
-                    this.#log("client got a permissions error");
-                break;
-                case DebugEvents.Reconnecting:
-                    this.#log("client is attempting to reconnect");
+                        // Resend any messages sent while client was offline
+                        this.#publishMessagesOnReconnect();
+                    break;
+                    case Events.Error:
+                        this.#log("client got a permissions error");
+                    break;
+                    case DebugEvents.Reconnecting:
+                        this.#log("client is attempting to reconnect");
 
-                    this.reconnecting = true;
+                        this.reconnecting = true;
 
-                    if(RECONNECT in this.#event_func && this.reconnecting){
-                        this.#event_func[RECONNECT](this.#RECONNECTING);   
-                    }
-                break;
-                case DebugEvents.StaleConnection:
-                    this.#log("client has a stale connection");
-                break;
-                default:
-                    this.#log(`got an unknown status ${s.type}`);
-            }
-            }
-        })().then();
+                        if(RECONNECT in this.#event_func && this.reconnecting){
+                            this.#event_func[RECONNECT](this.#RECONNECTING);   
+                        }
+                    break;
+                    case DebugEvents.StaleConnection:
+                        this.#log("client has a stale connection");
+                    break;
+                    default:
+                        this.#log(`got an unknown status ${s.type}`);
+                }
+                }
+            })().then();
 
-        // Subscribe to topics
-        this.#subscribeToTopics();
+            // Subscribe to topics
+            this.#subscribeToTopics();
+        }
     }
 
     /**
@@ -381,7 +389,7 @@ export class Realtime {
         }else{
             this.#offlineMessageBuffer.push({
                 topic: topic, 
-                message: message
+                message: data
             });
 
             return false;
@@ -486,7 +494,13 @@ export class Realtime {
      */
     async #createOrGetStream(topic){
         const streamName = this.#getStreamName();
-        const stream = await this.#jsManager.streams.info(streamName);
+        var stream = null;
+        
+        try{
+            stream = await this.#jsManager.streams.info(streamName);
+        }catch(err){
+            stream = null;
+        }
 
         if (!stream){
             // Stream does not exist, create one
@@ -559,6 +573,19 @@ export class Realtime {
         }else{
             return false;
         }
+    }
+
+    returnCreds(jwt, seed) {
+        return `-----BEGIN NATS USER JWT-----
+                ${jwt}
+                ------END NATS USER JWT------
+                ************************* IMPORTANT *************************
+                NKEY Seed printed below can be used sign and prove identity.
+                NKEYs are sensitive and should be treated as secrets.
+                -----BEGIN USER NKEY SEED-----
+                ${seed}
+                ------END USER NKEY SEED------
+                `;
     }
 
     #getStreamName(){
