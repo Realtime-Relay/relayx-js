@@ -22,6 +22,8 @@ export class Realtime {
         "exit-room", "relay-to-room", "enter-room", "set-user"
     ];
 
+    #config = "CiAgICAgICAgLS0tLS1CRUdJTiBOQVRTIFVTRVIgSldULS0tLS0KICAgICAgICBKV1RfS0VZCiAgICAgICAgLS0tLS0tRU5EIE5BVFMgVVNFUiBKV1QtLS0tLS0KCiAgICAgICAgKioqKioqKioqKioqKioqKioqKioqKioqKiBJTVBPUlRBTlQgKioqKioqKioqKioqKioqKioqKioqKioqKgogICAgICAgIE5LRVkgU2VlZCBwcmludGVkIGJlbG93IGNhbiBiZSB1c2VkIHRvIHNpZ24gYW5kIHByb3ZlIGlkZW50aXR5LgogICAgICAgIE5LRVlzIGFyZSBzZW5zaXRpdmUgYW5kIHNob3VsZCBiZSB0cmVhdGVkIGFzIHNlY3JldHMuCgogICAgICAgIC0tLS0tQkVHSU4gVVNFUiBOS0VZIFNFRUQtLS0tLQogICAgICAgIFNFQ1JFVF9LRVkKICAgICAgICAtLS0tLS1FTkQgVVNFUiBOS0VZIFNFRUQtLS0tLS0KCiAgICAgICAgKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKgogICAgICAgIA=="
+
     // Status Codes
     #RECONNECTING = "RECONNECTING";
     #RECONNECTED = "RECONNECTED";
@@ -45,12 +47,13 @@ export class Realtime {
     // Test Variables
     #timeout = 1000;
 
-    constructor(api_key){
-        this.api_key = api_key;
+    constructor(config){
+        this.api_key = config.api_key;
+        this.secret = config.secret
         this.namespace = ""; 
 
         // Init History API
-        this.history = new History(api_key);
+        this.history = new History(config.api_key);
     }
 
     /*
@@ -157,7 +160,7 @@ export class Realtime {
         var errCode = null;
         this.SEVER_URL = this.#baseUrl;
 
-        var credsFile = await readFileSync("relay.creds", "utf8");
+        var credsFile = this.#getUserCreds(this.api_key, this.secret)
         credsFile = new TextEncoder().encode(credsFile);
         var credsAuth = credsAuthenticator(credsFile);
 
@@ -168,7 +171,8 @@ export class Realtime {
                 maxReconnectAttempts: 1200,
                 reconnect: true,
                 reconnectTimeWait: 1000,
-                authenticator: credsAuth
+                authenticator: credsAuth,
+                token: this.api_key
             });
 
             this.#jsManager = await jetstreamManager(this.#natsClient);
@@ -373,7 +377,7 @@ export class Realtime {
 
         if(this.connected){
             if(!this.#topicMap.includes(topic)){
-                await this.#createOrGetStream(streamName);
+                await this.#createOrGetStream();
             }else{
                 this.#log(`${topic} exists locally, moving on...`)
             }
@@ -443,6 +447,7 @@ export class Realtime {
         }
 
         const consumer = await this.#jetstream.consumers.get(this.#getStreamName(), opts);
+        // const consumer = await this.#jetstream.consumers.get("test-namespace-stream", opts);
         this.#log(this.#topicMap)
         this.#log("Consumer is consuming");
 
@@ -573,19 +578,6 @@ export class Realtime {
         }else{
             return false;
         }
-    }
-
-    returnCreds(jwt, seed) {
-        return `-----BEGIN NATS USER JWT-----
-                ${jwt}
-                ------END NATS USER JWT------
-                ************************* IMPORTANT *************************
-                NKEY Seed printed below can be used sign and prove identity.
-                NKEYs are sensitive and should be treated as secrets.
-                -----BEGIN USER NKEY SEED-----
-                ${seed}
-                ------END USER NKEY SEED------
-                `;
     }
 
     #getStreamName(){
@@ -721,6 +713,15 @@ export class Realtime {
                 "Authorization": `Bearer ${this.api_key}`
             }
         });
+    }
+
+    #getUserCreds(jwt, secret){
+        var template = Buffer.from(this.#config, "base64").toString("utf8")
+
+        var creds = template.replace("JWT_KEY", jwt);
+        creds = creds.replace("SECRET_KEY", secret)
+
+        return creds
     }
 
     // Exposure for tests
