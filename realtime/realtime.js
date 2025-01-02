@@ -125,31 +125,25 @@ export class Realtime {
      * @returns {string} namespace value. Null if failed to retreive
      */
     async #getNameSpace() {
-        var startTime = Date.now();
-        var urlPart = "/get-namespace"
-
-       try{
-            var response = await axios.get(this.#baseUrl + urlPart,{
-                headers: {
-                    "Authorization": `Bearer ${this.api_key}`
-                }
-            });
-
-            var data = response.data
-
-            this.#log(data)
-
-            this.#logRESTResponseTime(startTime, urlPart);
-
-            if (data?.status === "SUCCESS"){
-                return data.data.namespace;
-            }else{
-                return null;
+        var res = await this.#natsClient.request("accounts.user.get_namespace", 
+            this.#codec.encode({
+                "api_key": this.api_key
+            }),
+            {
+                timeout: 5000
             }
-       }catch(err){
-            console.log(err.message)
-            throw new Error(err.message);
-       }
+        )
+
+        var data = res.json()
+
+        console.log(data)
+
+        if(data["status"] == "NAMESPACE_RETRIEVE_SUCCESS"){
+            this.namespace = data["data"]["namespace"]
+        }else{
+            this.namespace = null;
+            return
+        }
     }
     
 
@@ -157,7 +151,6 @@ export class Realtime {
      * Connects to the websocket server
      */
     async connect(){
-        var errCode = null;
         this.SEVER_URL = this.#baseUrl;
 
         var credsFile = this.#getUserCreds(this.api_key, this.secret)
@@ -177,6 +170,8 @@ export class Realtime {
 
             this.#jsManager = await jetstreamManager(this.#natsClient);
             this.#jetstream = await jetstream(this.#natsClient);
+
+            await this.#getNameSpace()
 
             this.connected = true;
         }catch(err){
@@ -437,11 +432,11 @@ export class Realtime {
      * @param {string} topic 
      */
     async #startConsumer(topic){
-        await this.#createOrGetStream(topic);
+        await this.#createOrGetStream();
 
         var opts = { 
             name: topic,
-            filter_subjects: [topic, topic + "_presence"],
+            filter_subjects: [this.#getStreamTopic(topic), this.#getStreamTopic(topic) + "_presence"],
             replay_policy: ReplayPolicy.Instant,
             opt_start_time: new Date(),
         }
@@ -497,7 +492,7 @@ export class Realtime {
      * Gets stream if it exists or creates one
      * @param {string} streamName 
      */
-    async #createOrGetStream(topic){
+    async #createOrGetStream(){
         const streamName = this.#getStreamName();
         var stream = null;
         
@@ -511,14 +506,14 @@ export class Realtime {
             // Stream does not exist, create one
             await this.#jsManager.streams.add({
                 name: streamName,
-                subjects: [...this.#topicMap, ...this.#getPresenceTopics()],
+                subjects: [...this.#getStreamTopicList(), ...this.#getPresenceTopics()],
                 ack_policy: AckPolicy.Explicit,
                 delivery_policy: DeliverPolicy.New
             });
 
             this.#log(`${streamName} created`);
         }else{
-            stream.config.subjects = [...this.#topicMap, ...this.#getPresenceTopics()];
+            stream.config.subjects = [...this.#getStreamTopicList(), ...this.#getPresenceTopics()];
             this.#jsManager.streams.update(streamName, stream.config);
 
             this.#log(`${streamName} exists, updating and moving on...`);
@@ -588,11 +583,21 @@ export class Realtime {
         return this.namespace + "_stream_" + topic;
     }
 
+    #getStreamTopicList(){
+        var topics = [];
+
+        this.#topicMap.forEach((topic) => {
+            topics.push(this.#getStreamTopic(topic))
+        })
+
+        return topics
+    }
+
     #getPresenceTopics(){
         var presence = [];
 
         this.#topicMap.forEach((topic) => {
-            presence.push(topic + "_presence")
+            presence.push(this.#getStreamTopic(topic) + "_presence")
         })
 
         return presence
