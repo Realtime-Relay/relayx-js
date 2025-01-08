@@ -100,9 +100,30 @@ export class Realtime {
         this.staging = staging; 
 
         if (staging !== undefined || staging !== null){
-            this.#baseUrl = staging ? "nats://0.0.0.0:4222" : "nats://128.199.176.185:4221";
+            this.#baseUrl = staging ? [
+                "nats://0.0.0.0:4221",
+                "nats://0.0.0.0:4222",
+                "nats://0.0.0.0:4223",
+                "nats://0.0.0.0:4224",
+                "nats://0.0.0.0:4225",
+                "nats://0.0.0.0:4226"] : 
+                [
+                    "nats://api.relay-x.io:4221",
+                    "nats://api.relay-x.io:4222",
+                    "nats://api.relay-x.io:4223",
+                    "nats://api.relay-x.io:4224",
+                    "nats://api.relay-x.io:4225",
+                    "nats://api.relay-x.io:4226",
+                ];
         }else{
-            this.#baseUrl = "http://128.199.176.185:3000";
+            this.#baseUrl = [
+                "nats://api.relay-x.io:4221",
+                "nats://api.relay-x.io:4222",
+                "nats://api.relay-x.io:4223",
+                "nats://api.relay-x.io:4224",
+                "nats://api.relay-x.io:4225",
+                "nats://api.relay-x.io:4226",
+            ];
         }
 
         this.#log(this.#baseUrl);
@@ -111,13 +132,7 @@ export class Realtime {
         this.opts = opts;
 
         // Init History
-        this.history.init(staging, opts?.debug);
-
-        if (this.api_key !== null && this.api_key !== undefined){
-            this.namespace = "test-namespace"; //await this.#getNameSpace();
-        }else{
-            throw new Error("Undefined or null api key in constructor"); 
-        }
+        // this.history.init(staging, opts?.debug);
     }
 
     /**
@@ -372,12 +387,16 @@ export class Realtime {
 
         if(this.connected){
             if(!this.#topicMap.includes(topic)){
+                this.#topicMap.push(topic);
+
                 await this.#createOrGetStream();
             }else{
                 this.#log(`${topic} exists locally, moving on...`)
             }
+
+            this.#log(`Publishing to topic => ${this.#getStreamTopic(topic)}`)
     
-            const ack = await this.#jetstream.publish(topic, encodedMessage);
+            const ack = await this.#jetstream.publish(this.#getStreamTopic(topic), encodedMessage);
             this.#log(`Publish Ack =>`)
             this.#log(ack)
     
@@ -514,7 +533,7 @@ export class Realtime {
             this.#log(`${streamName} created`);
         }else{
             stream.config.subjects = [...this.#getStreamTopicList(), ...this.#getPresenceTopics()];
-            this.#jsManager.streams.update(streamName, stream.config);
+            await this.#jsManager.streams.update(streamName, stream.config);
 
             this.#log(`${streamName} exists, updating and moving on...`);
         }

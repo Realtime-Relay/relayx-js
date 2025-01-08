@@ -16,7 +16,7 @@ var metrics = [];
 const createClient = async () => {
     // console.log("Creating client...")
     // for demonstration purposes, some clients stay stuck in HTTP long-polling
-    var realtime = new Realtime("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiQXJqdW4iLCJwcm9qZWN0X2lkIjoidGVzdF9wcm9qZWN0Iiwib3JnYW5pemF0aW9uIjoiYmV5b25kX3JvYml0aWNzIiwiaXNfdmFsaWQiOnRydWUsImlhdCI6MTczMDczNTUzOX0.AMkp492uQC0BgPjcA3cy8FId9gGw8nHyZHDK5o3MyMk");
+    var realtime = new Realtime()
     await realtime.init({
         max_retries: 2,
         debug: false

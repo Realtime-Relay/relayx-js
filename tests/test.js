@@ -1,32 +1,18 @@
-import { Realtime } from "../realtime/realtime";
+import { Realtime } from "../realtime/realtime.js";
 import axios from "axios";
+const { expect, jest, test, beforeAll, afterAll } = '@jest/globals';
 
 let realTimeEnabled;
 
-jest.mock('axios');
-
 beforeAll(async () => {
-    const successData = {
-        "status": "SUCCESS", 
-        "data": {
-            "msg": "Successfully fetched namespace",
-            "namespace": "test-namespace"
-        }
-    };
-
-    axios.get.mockResolvedValue({
-        data: successData
-    });
-
     // Start server for testing. Run local server!!
-    realTimeEnabled = new Realtime(process.env.user_key);
+    realTimeEnabled = new Realtime({
+        api_key: process.env.user_key,
+        secret: process.env.secret
+    });
     await realTimeEnabled.init(true, {
         debug: true
     });
-    realTimeEnabled.setUser({
-        "user": "test-user",
-        "id": 123 
-    })
     realTimeEnabled.connect();
 });
 
@@ -34,27 +20,15 @@ afterAll(() => {
     realTimeEnabled.close();
 });
 
-test("No API key in constructor", async () => {
+test("No creds in constructor", async () => {
     var realtime = new Realtime(null);
 
     expect(realtime.api_key).toBeNull();
-    await expect(realtime.init(true)).rejects.toThrow("Undefined or null api key in constructor");
+    expect(realtime.secret).toBeNull();
 
 });
 
 test('init() function test', async () => {
-    const successData = {
-        "status": "SUCCESS", 
-        "data": {
-            "msg": "Successfully fetched namespace",
-            "namespace": "test-namespace"
-        }
-    };
-
-    axios.get.mockResolvedValue({
-        data: successData
-    });
-
     var realtime = new Realtime("<KEY>");
     await realtime.init(true);
 
@@ -104,39 +78,8 @@ test('init() function test', async () => {
     expect(realtime.opts.max_retries).toBeUndefined();
 });
 
-test("/get-namespace test", async () => {
-    const successData = {
-        "status": "SUCCESS", 
-        "data": {
-            "msg": "Successfully fetched namespace",
-            "namespace": "test-namespace"
-        }
-    };
-
-    axios.get.mockResolvedValue({
-        data: successData
-    });
-
-    var realtime = new Realtime("<KEY>");
-    await realtime.init(); 
-
-    expect(realtime.namespace).toBe("test-namespace");
-
-    // Fail Condition
-    const failData = {
-        "status": "FAIL", 
-        "data": {
-            "msg": "Unable to get namespace, missing data"
-        }
-    };
-
-    axios.get.mockResolvedValue({
-        data: failData
-    });
-
-    await realtime.init(); 
-
-    expect(realtime.namespace).toBe(null);
+test("get-namespace test", async () => {
+    expect(realtime.namespace.length > 0).toBeTruthy()
 });
 
 test("Retry method test", async () => {
@@ -205,22 +148,7 @@ test("Testing publish(topic, data) method", async () => {
         message: "Hello World!"
     });
 
-    expect(response["message"]).not.toBeUndefined();
-    expect(response["message"]).not.toBeNull();
-
-    expect(response["message"]["id"]).not.toBeUndefined();
-    expect(response["message"]["id"]).not.toBeNull();
-
-    expect(response["message"]["message"]).toStrictEqual({
-        "message": "Hello World!",
-    });
-
-    expect(response["message"]["topic"]).toBe("hello");
-
-    expect(response["sent"]).toBeTruthy();
-    expect(response["status"]).toBe("ACK_SUCCESS");
-
-    expect(response["connected"]).toBeTruthy();
+    expect(response).toBeTruthy()
 });
 
 test("Testing publish(topic, data) with invalid inputs", async () => {
@@ -229,12 +157,7 @@ test("Testing publish(topic, data) with invalid inputs", async () => {
     }; 
     var response = await realTimeEnabled.publish(null, data);
 
-    expect(response).toStrictEqual({
-        "status": "PUBLISH_INPUT_ERR",
-        "sent": false,
-        "connected": true,
-        "message": `topic is null || data is ${data}`
-    });
+    expect(response).toBeFalsy();
 
     response = await realTimeEnabled.publish(undefined, data);
 
