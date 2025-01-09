@@ -17,10 +17,6 @@ export class Realtime {
 
     #event_func = {}; 
     #topicMap = []; 
-    #roomKeyEvents = ["connect", "room-message", "room-join", "disconnect",
-        "ping", "reconnect_attempt", "reconnect_failed", "room-message-ack",
-        "exit-room", "relay-to-room", "enter-room", "set-user"
-    ];
 
     #config = "CiAgICAgICAgLS0tLS1CRUdJTiBOQVRTIFVTRVIgSldULS0tLS0KICAgICAgICBKV1RfS0VZCiAgICAgICAgLS0tLS0tRU5EIE5BVFMgVVNFUiBKV1QtLS0tLS0KCiAgICAgICAgKioqKioqKioqKioqKioqKioqKioqKioqKiBJTVBPUlRBTlQgKioqKioqKioqKioqKioqKioqKioqKioqKgogICAgICAgIE5LRVkgU2VlZCBwcmludGVkIGJlbG93IGNhbiBiZSB1c2VkIHRvIHNpZ24gYW5kIHByb3ZlIGlkZW50aXR5LgogICAgICAgIE5LRVlzIGFyZSBzZW5zaXRpdmUgYW5kIHNob3VsZCBiZSB0cmVhdGVkIGFzIHNlY3JldHMuCgogICAgICAgIC0tLS0tQkVHSU4gVVNFUiBOS0VZIFNFRUQtLS0tLQogICAgICAgIFNFQ1JFVF9LRVkKICAgICAgICAtLS0tLS1FTkQgVVNFUiBOS0VZIFNFRUQtLS0tLS0KCiAgICAgICAgKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKgogICAgICAgIA=="
 
@@ -47,13 +43,29 @@ export class Realtime {
     // Test Variables
     #timeout = 1000;
 
-    constructor(config){
-        this.api_key = config.api_key;
-        this.secret = config.secret
-        this.namespace = ""; 
+    #maxPublishRetries = 5; 
 
-        // Init History API
-        this.history = new History(config.api_key);
+    constructor(config){
+        if(typeof config != "object"){
+            throw new Error("Realtime($config). $config not object => {}")
+        }
+
+        if(config != null && config != undefined){
+            this.api_key = config.api_key != undefined ? config.api_key : null;
+            this.secret = config.secret != undefined ? config.secret : null;
+
+            if(this.api_key == null){
+                throw new Error("api_key value null")
+            }
+
+            if(this.secret == null){
+                throw new Error("secret value null")
+            }
+        }else{
+            throw new Error("{api_key: <value>, secret: <value>} not passed in constructor")
+        }
+
+        this.namespace = null;
     }
 
     /*
@@ -130,9 +142,6 @@ export class Realtime {
         this.#log(opts);
 
         this.opts = opts;
-
-        // Init History
-        // this.history.init(staging, opts?.debug);
     }
 
     /**
@@ -151,7 +160,7 @@ export class Realtime {
 
         var data = res.json()
 
-        console.log(data)
+        this.#log(data)
 
         if(data["status"] == "NAMESPACE_RETRIEVE_SUCCESS"){
             this.namespace = data["data"]["namespace"]
@@ -307,11 +316,19 @@ export class Realtime {
      * @param {string} topic 
      */
     async off(topic){
+        if(topic == null || topic == undefined){
+            throw new Error("$topic is null / undefined")
+        }
+
+        if(typeof topic !== "string"){
+            throw new Error(`Expected $topic type -> string. Instead receieved -> ${typeof topic}`);
+        }
+
         this.#topicMap = this.#topicMap.filter(item => item !== topic);
 
         delete this.#event_func[topic];
 
-        await this.#deleteConsumer(topic);
+        return await this.#deleteConsumer(topic);
     }
 
     /**
@@ -321,34 +338,32 @@ export class Realtime {
      * @returns {boolean} - To check if topic subscription was successful
      */
     async on(topic, func){
+        if(topic == null || topic == undefined){
+            throw new Error("$topic is null / undefined")
+        }
+
+        if(func == null || func == undefined){
+            throw new Error("$func is null / undefined")
+        }
+
         if ((typeof func !== "function")){
             throw new Error(`Expected $listener type -> function. Instead receieved -> ${typeof func}`);
         }
         
         if(typeof topic !== "string"){
-            throw new Error(`Expected $topic type -> string. Instead receieved -> ${typeof func}`);
+            throw new Error(`Expected $topic type -> string. Instead receieved -> ${typeof topic}`);
         }
 
-        if ((topic !== null || topic != undefined) && (func !== null || func !== undefined)){
-            if(!this.#roomKeyEvents.includes(topic)){
-                this.#event_func[topic] = func; 
+        this.#event_func[topic] = func; 
 
-                if (![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
-                    this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND, ...this.#roomKeyEvents].includes(topic)){
-                        this.#topicMap.push(topic);
+        if (![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
+            this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND].includes(topic)){
+                this.#topicMap.push(topic);
 
-                        if(this.connected){
-                            // Connected we need to create a topic in a stream
-                            await this.#startConsumer(topic);
-                        }
-                }
-
-                return true
-            }else{
-                return false;
+            if(this.connected){
+                // Connected we need to create a topic in a stream
+                await this.#startConsumer(topic);
             }
-        }else{
-            return false;
         }
     }
 
@@ -369,7 +384,7 @@ export class Realtime {
         }
 
         if(typeof topic !== "string"){
-            throw new Error(`Expected $topic type -> string. Instead receieved -> ${typeof func}`);
+            throw new Error(`Expected $topic type -> string. Instead receieved -> ${typeof topic}`);
         }
 
         var start = Date.now()
@@ -461,7 +476,6 @@ export class Realtime {
         }
 
         const consumer = await this.#jetstream.consumers.get(this.#getStreamName(), opts);
-        // const consumer = await this.#jetstream.consumers.get("test-namespace-stream", opts);
         this.#log(this.#topicMap)
         this.#log("Consumer is consuming");
 
@@ -502,7 +516,15 @@ export class Realtime {
     async #deleteConsumer(topic){
         const consumer = this.#consumerMap[topic]
 
-        var del = await consumer.delete();
+        var del = false;
+
+        if (consumer != null && consumer != undefined){
+            del = await consumer.delete();
+        }else{
+            del = true
+        }
+
+        delete this.#consumerMap[topic];
 
         return del;
     }
@@ -539,42 +561,6 @@ export class Realtime {
         }
     }
 
-    // User functions
-    setUser(user){
-        this.user = user; 
-    }
-
-    getUser(){
-        return this.user !== null && this.user !== undefined ? this.user : null;
-    }
-
-    async #setRemoteUser(){
-        var userData = this.getUser();
-        var success = false;
-        var ackTimeout = this.#getAckTimeout();
-
-        try{
-            if (userData !== null && userData !== undefined){
-                await this.socket.timeout(ackTimeout).emitWithAck("set-user", {
-                    user_data: userData
-                });
-            }else{
-                console.log("No user object found, skipping setting user");
-            }
-
-            success = true; 
-        }catch(err){
-            this.#log(err); 
-
-            success = false; 
-        }
-
-        return {
-            success: success,
-            output: null
-        }
-    }
-
     // Utility functions
     #getClientId(){
         return this.#natsClient?.info?.client_id
@@ -588,18 +574,28 @@ export class Realtime {
     isTopicValid(topic){
         if(topic !== null && topic !== undefined && (typeof topic) == "string"){
             return ![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
-                this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND,...this.#roomKeyEvents].includes(topic);
+                this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND].includes(topic);
         }else{
             return false;
         }
     }
 
     #getStreamName(){
-        return this.namespace + "_stream"
+        if(this.namespace != null){
+            return this.namespace + "_stream"
+        }else{
+            this.close();
+            throw new Error("$namespace is null. Cannot initialize program with null $namespace")
+        }
     }
 
     #getStreamTopic(topic){
-        return this.namespace + "_stream_" + topic;
+        if(this.namespace != null){
+            return this.namespace + "_stream_" + topic;
+        }else{
+            this.close();
+            throw new Error("$namespace is null. Cannot initialize program with null $namespace")
+        }
     }
 
     #getStreamTopicList(){
@@ -633,28 +629,19 @@ export class Realtime {
     }
 
     #getPublishRetry(){
+        this.#log(this.opts)
         if(this.opts !== null && this.opts !== undefined){
             if(this.opts.max_retries !== null && this.opts.max_retries !== undefined){
                 if (this.opts.max_retries <= 0){
-                    return this.maxPublishRetries; 
+                    return this.#maxPublishRetries; 
                 }else{
                     return this.opts.max_retries;
                 }
             }else{
-                return this.maxPublishRetries; 
+                return this.#maxPublishRetries; 
             }
         }else{
-            return this.maxPublishRetries; 
-        }
-    }
-
-    #getAckTimeout(){
-        if(process.env.NODE_ENV == "test"){
-            this.#log(`TIMEOUT -> ${this.#timeout}`)
-            return this.#timeout;
-        }else{
-            this.#timeout = 1000;
-            return 1000;
+            return this.#maxPublishRetries; 
         }
     }
 
@@ -697,48 +684,6 @@ export class Realtime {
         return methodDataOutput;
     }
 
-    /**
-     * Logs client side REST API response time and sends
-     * it to the server for logging
-     * @param {unix timestamp} startTime 
-     * @param {string} url 
-     */
-    async #logRESTResponseTime(startTime, url){
-        var responseTime = Date.now() - startTime;
-
-        var data = {
-            "url": url,
-            "response_time": responseTime
-        }
-
-        await axios.post(this.#baseUrl + "/metrics/log", data, {
-            headers: {
-                "Authorization": `Bearer ${this.api_key}`
-            }
-        });
-    }
-
-    /**
-     * Logs client side Socket API response time and sends
-     * it to the server for logging
-     * @param {unix timestamp} startTime 
-     * @param {JSON} data 
-     */
-    async #logSocketResponseTime(startTime, data){
-        var responseTime = Date.now() - startTime;
-
-        var data = {
-            "data": data,
-            "response_time": responseTime
-        }
-
-        await axios.post(this.#baseUrl + "/metrics/socket_log", data, {
-            headers: {
-                "Authorization": `Bearer ${this.api_key}`
-            }
-        });
-    }
-
     #getUserCreds(jwt, secret){
         var template = Buffer.from(this.#config, "base64").toString("utf8")
 
@@ -765,11 +710,43 @@ export class Realtime {
         }
     }
 
-    testSetRemoteUser(){
+    testGetStreamName(){
         if(process.env.NODE_ENV == "test"){
-            return this.#setRemoteUser.bind(this);
+            return this.#getStreamName.bind(this);
         }else{
-            return null;
+            return null; 
+        }
+    }
+
+    testGetStreamTopic(){
+        if(process.env.NODE_ENV == "test"){
+            return this.#getStreamTopic.bind(this);
+        }else{
+            return null; 
+        }
+    }
+
+    testGetTopicMap(){
+        if(process.env.NODE_ENV == "test"){
+            return this.#topicMap
+        }else{
+            return null; 
+        }
+    }
+
+    testGetEventMap(){
+        if(process.env.NODE_ENV == "test"){
+            return this.#event_func
+        }else{
+            return null; 
+        }
+    }
+
+    testGetConsumerMap(){
+        if(process.env.NODE_ENV == "test"){
+            return this.#consumerMap
+        }else{
+            return null; 
         }
     }
 }
