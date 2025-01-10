@@ -1,4 +1,4 @@
-import { Realtime } from "../realtime/realtime.js";
+import { Realtime, CONNECTED, RECONNECT, DISCONNECTED, MESSAGE_RESEND } from "../realtime/realtime.js";
 import axios from "axios";
 import { test, before, after } from 'node:test';
 import assert from 'node:assert';
@@ -28,17 +28,23 @@ test("No creds in constructor", async () => {
     new Error("api_key value null"),
     "Expected error was not thrown");
 
+    //---------------------------------------------------------------
+
     assert.throws(() => {
         new Realtime({api_key: "<KEY>"});
     }, 
     new Error("secret value null"),
     "Expected error was not thrown");
 
+    //---------------------------------------------------------------
+
     assert.throws(() => {
         var realtime = new Realtime(null);
     }, 
     new Error("{api_key: <value>, secret: <value>} not passed in constructor"),
     "Expected error was not thrown")
+
+    //---------------------------------------------------------------
 
     assert.throws(() => {
         new Realtime("KEY");
@@ -57,6 +63,8 @@ test('init() function test', async () => {
     assert.strictEqual(realtime.staging, true);
     assert.deepStrictEqual(realtime.opts, {});
 
+    //---------------------------------------------------------------
+
     await realtime.init({
         debug: true,
         max_retries: 2
@@ -69,6 +77,8 @@ test('init() function test', async () => {
     })
     assert.strictEqual(realtime.opts.debug, true);
     assert.strictEqual(realtime.opts.max_retries, 2);
+
+    //---------------------------------------------------------------
 
     await realtime.init(true, {
         debug: false,
@@ -83,6 +93,8 @@ test('init() function test', async () => {
     assert.strictEqual(realtime.opts.debug, false);
     assert.strictEqual(realtime.opts.max_retries, 2);
 
+    //---------------------------------------------------------------
+
     await realtime.init(false);
 
     assert.strictEqual(realtime.staging, false);
@@ -90,6 +102,8 @@ test('init() function test', async () => {
 
     assert.strictEqual(realtime.opts.debug, undefined);
     assert.strictEqual(realtime.opts.max_retries, undefined);
+
+    //---------------------------------------------------------------
 
     await realtime.init();
 
@@ -196,6 +210,8 @@ test("Testing publish(topic, data) with invalid inputs", async () => {
     },
     new Error("$topic is null or undefined"),
     "Expected error was not thrown");
+
+    //---------------------------------------------------------------
     
     await assert.rejects(async () => {
         await realTimeEnabled.publish(undefined, data);
@@ -203,16 +219,52 @@ test("Testing publish(topic, data) with invalid inputs", async () => {
     new Error("$topic is null or undefined"),
     "Expected error was not thrown");
 
+    //---------------------------------------------------------------
+
     await assert.rejects(async () => {
         await realTimeEnabled.publish("", data);
     },
     new Error("$topic cannot be an empty string"),
     "Expected error was not thrown");
 
+    //---------------------------------------------------------------
+
     await assert.rejects(async () => {
         await realTimeEnabled.publish(123, data);
     },
     new Error("Expected $topic type -> string. Instead receieved -> number"),
+    "Expected error was not thrown");
+
+    //---------------------------------------------------------------
+
+    await assert.rejects(async () => {
+        await realTimeEnabled.publish(CONNECTED, {});
+    },
+    new Error("Invalid topic, use isTopicValid($topic) to validate topic"),
+    "Expected error was not thrown");
+
+    //---------------------------------------------------------------
+
+    await assert.rejects(async () => {
+        await realTimeEnabled.publish(RECONNECT, {});
+    },
+    new Error("Invalid topic, use isTopicValid($topic) to validate topic"),
+    "Expected error was not thrown");
+
+    //---------------------------------------------------------------
+
+    await assert.rejects(async () => {
+        await realTimeEnabled.publish(DISCONNECTED, {});
+    },
+    new Error("Invalid topic, use isTopicValid($topic) to validate topic"),
+    "Expected error was not thrown");
+
+    //---------------------------------------------------------------
+
+    await assert.rejects(async () => {
+        await realTimeEnabled.publish(MESSAGE_RESEND, {});
+    },
+    new Error("Invalid topic, use isTopicValid($topic) to validate topic"),
     "Expected error was not thrown");
 });
 
@@ -228,11 +280,15 @@ test("on() test", async () => {
     new Error("$topic is null / undefined"),
     "Expected error was not thrown");
 
+    //---------------------------------------------------------------
+
     await assert.rejects(async () => {
         await realtime.on(undefined, null);
     },
     new Error("$topic is null / undefined"),
     "Expected error was not thrown");
+
+    //---------------------------------------------------------------
 
     await assert.rejects(async () => {
         await realtime.on("undefined", null);
@@ -240,11 +296,15 @@ test("on() test", async () => {
     new Error("$func is null / undefined"),
     "Expected error was not thrown");
 
+    //---------------------------------------------------------------
+
     await assert.rejects(async () => {
         await realtime.on("undefined", undefined);
     },
     new Error("$func is null / undefined"),
     "Expected error was not thrown");
+
+    //---------------------------------------------------------------
 
     await assert.rejects(async () => {
         await realtime.on(123, () => {});
@@ -252,11 +312,15 @@ test("on() test", async () => {
     new Error("Expected $topic type -> string. Instead receieved -> number"),
     "Expected error was not thrown");
 
+    //---------------------------------------------------------------
+
     await assert.rejects(async () => {
         await realtime.on("hello_world", "() => {}");
     },
     new Error("Expected $listener type -> function. Instead receieved -> string"),
     "Expected error was not thrown");
+
+    //---------------------------------------------------------------
 
     await realtime.on("hello_world", () => {});
 
