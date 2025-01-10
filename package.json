@@ -1,5 +1,5 @@
 {
-  "name": "relay-x-js",
+  "name": "relayx-js",
   "version": "1.0.0",
   "main": "realtime/realtime.js",
   "type": "module",
