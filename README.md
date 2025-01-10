@@ -16,7 +16,7 @@ Install the relay library by running the command below in your terminal<br>
 1. Obtain API key and Secret key
 2. Initialize the library
     ```javascript
-    import { Realtime, CONNECTED, RECONNECT, DISCONNECTED } from "relay"
+    import { Realtime, CONNECTED, RECONNECT, DISCONNECTED } from "relay-x-js"
 
     var realtime = new Realtime({
         api_key: process.env.api_key,
