@@ -1,148 +1,127 @@
-import { Realtime } from "../realtime/realtime";
+import { Realtime, CONNECTED, RECONNECT, DISCONNECTED, MESSAGE_RESEND } from "../realtime/realtime.js";
 import axios from "axios";
+import { test, before, after } from 'node:test';
+import assert from 'node:assert';
 
 let realTimeEnabled;
 
-jest.mock('axios');
-
-beforeAll(async () => {
-    const successData = {
-        "status": "SUCCESS", 
-        "data": {
-            "msg": "Successfully fetched namespace",
-            "namespace": "test-namespace"
-        }
-    };
-
-    axios.get.mockResolvedValue({
-        data: successData
-    });
-
+before(async () => {
     // Start server for testing. Run local server!!
-    realTimeEnabled = new Realtime(process.env.user_key);
+    realTimeEnabled = new Realtime({
+        api_key: process.env.user_key,
+        secret: process.env.secret
+    });
     await realTimeEnabled.init(true, {
         debug: true
     });
-    realTimeEnabled.setUser({
-        "user": "test-user",
-        "id": 123 
-    })
-    realTimeEnabled.connect();
+    await realTimeEnabled.connect();
 });
 
-afterAll(() => {
+after(() => {
     realTimeEnabled.close();
 });
 
-test("No API key in constructor", async () => {
-    var realtime = new Realtime(null);
+test("No creds in constructor", async () => {
+    assert.throws(() => {
+        new Realtime({});
+    }, 
+    new Error("api_key value null"),
+    "Expected error was not thrown");
 
-    expect(realtime.api_key).toBeNull();
-    await expect(realtime.init(true)).rejects.toThrow("Undefined or null api key in constructor");
+    //---------------------------------------------------------------
 
+    assert.throws(() => {
+        new Realtime({api_key: "<KEY>"});
+    }, 
+    new Error("secret value null"),
+    "Expected error was not thrown");
+
+    //---------------------------------------------------------------
+
+    assert.throws(() => {
+        var realtime = new Realtime(null);
+    }, 
+    new Error("{api_key: <value>, secret: <value>} not passed in constructor"),
+    "Expected error was not thrown")
+
+    //---------------------------------------------------------------
+
+    assert.throws(() => {
+        new Realtime("KEY");
+    }, 
+    new Error("Realtime($config). $config not object => {}"),
+    "Expected error was not thrown")
 });
 
 test('init() function test', async () => {
-    const successData = {
-        "status": "SUCCESS", 
-        "data": {
-            "msg": "Successfully fetched namespace",
-            "namespace": "test-namespace"
-        }
-    };
-
-    axios.get.mockResolvedValue({
-        data: successData
+    var realtime =  new Realtime({
+        api_key: process.env.user_key,
+        secret: process.env.secret
     });
-
-    var realtime = new Realtime("<KEY>");
     await realtime.init(true);
 
-    expect(realtime.staging).toBe(true);
-    expect(realtime.opts).toStrictEqual({});
+    assert.strictEqual(realtime.staging, true);
+    assert.deepStrictEqual(realtime.opts, {});
+
+    //---------------------------------------------------------------
 
     await realtime.init({
         debug: true,
         max_retries: 2
     });
 
-    expect(realtime.staging).toBe(false);
-    expect(realtime.opts).toStrictEqual({
+    assert.strictEqual(realtime.staging, false);
+    assert.deepStrictEqual(realtime.opts, {
         debug: true,
         max_retries: 2
     })
-    expect(realtime.opts.debug).toBeTruthy();
-    expect(realtime.opts.max_retries).toBe(2);
+    assert.strictEqual(realtime.opts.debug, true);
+    assert.strictEqual(realtime.opts.max_retries, 2);
+
+    //---------------------------------------------------------------
 
     await realtime.init(true, {
         debug: false,
         max_retries: 2
     });
 
-    expect(realtime.staging).toBe(true);
-    expect(realtime.opts).toStrictEqual({
+    assert.strictEqual(realtime.staging, true);
+    assert.deepStrictEqual(realtime.opts, {
         debug: false,
         max_retries: 2
     })
-    expect(realtime.opts.debug).toBeFalsy();
-    expect(realtime.opts.max_retries).toBe(2);
+    assert.strictEqual(realtime.opts.debug, false);
+    assert.strictEqual(realtime.opts.max_retries, 2);
+
+    //---------------------------------------------------------------
 
     await realtime.init(false);
 
-    expect(realtime.staging).toBe(false);
-    expect(realtime.opts).toStrictEqual({})
+    assert.strictEqual(realtime.staging, false);
+    assert.deepStrictEqual(realtime.opts, {})
 
-    expect(realtime.opts.debug).toBeUndefined();
-    expect(realtime.opts.max_retries).toBeUndefined();
+    assert.strictEqual(realtime.opts.debug, undefined);
+    assert.strictEqual(realtime.opts.max_retries, undefined);
+
+    //---------------------------------------------------------------
 
     await realtime.init();
 
-    expect(realtime.staging).toBe(false);
-    expect(realtime.opts).toStrictEqual({})
+    assert.strictEqual(realtime.staging, false);
+    assert.deepStrictEqual(realtime.opts, {})
 
-    expect(realtime.opts.debug).toBeUndefined();
-    expect(realtime.opts.max_retries).toBeUndefined();
+    assert.strictEqual(realtime.opts.debug, undefined);
+    assert.strictEqual(realtime.opts.max_retries, undefined);
 });
 
-test("/get-namespace test", async () => {
-    const successData = {
-        "status": "SUCCESS", 
-        "data": {
-            "msg": "Successfully fetched namespace",
-            "namespace": "test-namespace"
-        }
-    };
-
-    axios.get.mockResolvedValue({
-        data: successData
-    });
-
-    var realtime = new Realtime("<KEY>");
-    await realtime.init(); 
-
-    expect(realtime.namespace).toBe("test-namespace");
-
-    // Fail Condition
-    const failData = {
-        "status": "FAIL", 
-        "data": {
-            "msg": "Unable to get namespace, missing data"
-        }
-    };
-
-    axios.get.mockResolvedValue({
-        data: failData
-    });
-
-    await realtime.init(); 
-
-    expect(realtime.namespace).toBe(null);
+test("Namespace check test", async () => {
+    assert.strictEqual(realTimeEnabled.namespace.length > 0, true)
 });
 
 test("Retry method test", async () => {
     var retryMethod = realTimeEnabled.testRetryTillSuccess(); 
 
-    expect(retryMethod).not.toBeNull();
+    assert.notStrictEqual(retryMethod, null, "Obj != null")
 
     function testMethod1(arg){
         return {
@@ -153,7 +132,7 @@ test("Retry method test", async () => {
 
     var output = await retryMethod(testMethod1, 5, 1, "test_output")
 
-    expect(output).toBe("test_output");
+    assert.strictEqual(output, "test_output");
 
     function testMethod2(){
         return {
@@ -163,40 +142,53 @@ test("Retry method test", async () => {
     }
 
     output = await retryMethod(testMethod2, 5, 1);
-    expect(output).toBeNull();
+    assert.strictEqual(output, null);
 });
 
 test("get publish retry count test based in init()", async () => {
-    realTimeEnabled.init({
+    var realtime =  new Realtime({
+        api_key: process.env.user_key,
+        secret: process.env.secret
+    });
+
+    await realtime.init({
         max_retries: 2
     });
 
-    var publishRetryMethod = realTimeEnabled.testGetPublishRetry();
-    expect(publishRetryMethod).not.toBeNull();
+    var publishRetryMethod = realtime.testGetPublishRetry();
+    assert.notStrictEqual(publishRetryMethod, null);
 
-    var attempts = await publishRetryMethod();
-    expect(attempts).toBe(2);
+    var attempts = publishRetryMethod();
+    assert.strictEqual(attempts, 2);
 
-    realTimeEnabled.init({
+    //-----------------------------------------------------------------
+
+    await realtime.init({
         max_retries: 0
     })
 
     attempts = publishRetryMethod();
-    expect(attempts).toBe(5);
+    assert.notStrictEqual(attempts, 0);
+    assert.strictEqual(attempts, 5);
 
-    realTimeEnabled.init({
+    //-----------------------------------------------------------------
+
+    await realtime.init({
         max_retries: -4
     })
 
     attempts = publishRetryMethod();
-    expect(attempts).toBe(5);
+    assert.notStrictEqual(attempts, -4);
+    assert.strictEqual(attempts, 5);
 
-    realTimeEnabled.init({
+    //-----------------------------------------------------------------
+
+    await realtime.init({
         max_retries: 9
     })
 
-    attempts = publishRetryMethod();
-    expect(attempts).toBe(9);
+    attempts = await publishRetryMethod();
+    assert.strictEqual(attempts, 9);
 });
 
 test("Testing publish(topic, data) method", async () => {
@@ -205,164 +197,221 @@ test("Testing publish(topic, data) method", async () => {
         message: "Hello World!"
     });
 
-    expect(response["message"]).not.toBeUndefined();
-    expect(response["message"]).not.toBeNull();
-
-    expect(response["message"]["id"]).not.toBeUndefined();
-    expect(response["message"]["id"]).not.toBeNull();
-
-    expect(response["message"]["message"]).toStrictEqual({
-        "message": "Hello World!",
-    });
-
-    expect(response["message"]["topic"]).toBe("hello");
-
-    expect(response["sent"]).toBeTruthy();
-    expect(response["status"]).toBe("ACK_SUCCESS");
-
-    expect(response["connected"]).toBeTruthy();
+    assert.strictEqual(response, true);
 });
 
 test("Testing publish(topic, data) with invalid inputs", async () => {
     var data = {
         message: "Hello World!"
     }; 
-    var response = await realTimeEnabled.publish(null, data);
+    
+    await assert.rejects(async () => {
+        await realTimeEnabled.publish(null, data);
+    },
+    new Error("$topic is null or undefined"),
+    "Expected error was not thrown");
 
-    expect(response).toStrictEqual({
-        "status": "PUBLISH_INPUT_ERR",
-        "sent": false,
-        "connected": true,
-        "message": `topic is null || data is ${data}`
-    });
+    //---------------------------------------------------------------
+    
+    await assert.rejects(async () => {
+        await realTimeEnabled.publish(undefined, data);
+    },
+    new Error("$topic is null or undefined"),
+    "Expected error was not thrown");
 
-    response = await realTimeEnabled.publish(undefined, data);
+    //---------------------------------------------------------------
 
-    expect(response).toStrictEqual({
-        "status": "PUBLISH_INPUT_ERR",
-        "sent": false,
-        "connected": true,
-        "message": `topic is undefined || data is ${data}`
-    });
+    await assert.rejects(async () => {
+        await realTimeEnabled.publish("", data);
+    },
+    new Error("$topic cannot be an empty string"),
+    "Expected error was not thrown");
 
-    response = await realTimeEnabled.publish("test-topic", null);
+    //---------------------------------------------------------------
 
-    expect(response).toStrictEqual({
-        "status": "PUBLISH_INPUT_ERR",
-        "sent": false,
-        "connected": true,
-        "message": `topic is test-topic || data is null`
-    });
+    await assert.rejects(async () => {
+        await realTimeEnabled.publish(123, data);
+    },
+    new Error("Expected $topic type -> string. Instead receieved -> number"),
+    "Expected error was not thrown");
 
-    response = await realTimeEnabled.publish("test-topic", undefined);
+    //---------------------------------------------------------------
 
-    expect(response).toStrictEqual({
-        "status": "PUBLISH_INPUT_ERR",
-        "sent": false,
-        "connected": true,
-        "message": `topic is test-topic || data is undefined`
-    });
+    await assert.rejects(async () => {
+        await realTimeEnabled.publish(CONNECTED, {});
+    },
+    new Error("Invalid topic, use isTopicValid($topic) to validate topic"),
+    "Expected error was not thrown");
 
-    response = await realTimeEnabled.publish(null, undefined);
+    //---------------------------------------------------------------
 
-    expect(response).toStrictEqual({
-        "status": "PUBLISH_INPUT_ERR",
-        "sent": false,
-        "connected": true,
-        "message": `topic is null || data is undefined`
-    });
+    await assert.rejects(async () => {
+        await realTimeEnabled.publish(RECONNECT, {});
+    },
+    new Error("Invalid topic, use isTopicValid($topic) to validate topic"),
+    "Expected error was not thrown");
 
-    response = await realTimeEnabled.publish(null, null);
+    //---------------------------------------------------------------
 
-    expect(response).toStrictEqual({
-        "status": "PUBLISH_INPUT_ERR",
-        "sent": false,
-        "connected": true,
-        "message": `topic is null || data is null`
-    });
+    await assert.rejects(async () => {
+        await realTimeEnabled.publish(DISCONNECTED, {});
+    },
+    new Error("Invalid topic, use isTopicValid($topic) to validate topic"),
+    "Expected error was not thrown");
 
-    response = await realTimeEnabled.publish(undefined, undefined);
+    //---------------------------------------------------------------
 
-    expect(response).toStrictEqual({
-        "status": "PUBLISH_INPUT_ERR",
-        "sent": false,
-        "connected": true,
-        "message": `topic is undefined || data is undefined`
-    });
-
-    response = await realTimeEnabled.publish(undefined, null);
-
-    expect(response).toStrictEqual({
-        "status": "PUBLISH_INPUT_ERR",
-        "sent": false,
-        "connected": true,
-        "message": `topic is undefined || data is null`
-    });
+    await assert.rejects(async () => {
+        await realTimeEnabled.publish(MESSAGE_RESEND, {});
+    },
+    new Error("Invalid topic, use isTopicValid($topic) to validate topic"),
+    "Expected error was not thrown");
 });
 
-test("Testing create or join room functionality", async () => {
-    var method = realTimeEnabled.testCreateOrJoinRoom();
-    expect(method).not.toBeNull();
+test("on() test", async () => {
+    var realtime = new Realtime({
+        api_key: process.env.user_key,
+        secret: process.env.secret
+    });
 
-    var reservedEvents = ["CONNECTED", "DISCONNECTED", "connect", "room-message", "room-join", "disconnect"];
+    await assert.rejects(async () => {
+        await realtime.on(null, null);
+    },
+    new Error("$topic is null / undefined"),
+    "Expected error was not thrown");
 
-    for(let i = 0; i < reservedEvents.length; i++){
-        var response = await method(reservedEvents[i]);
-        expect(response.success).toBeFalsy();
-        expect(response.output).toBeFalsy();
-    }
+    //---------------------------------------------------------------
 
-    var response = await method("test-topic");
-    expect(response.success).toBeTruthy();
-    expect(response.output).toBeTruthy();
+    await assert.rejects(async () => {
+        await realtime.on(undefined, null);
+    },
+    new Error("$topic is null / undefined"),
+    "Expected error was not thrown");
+
+    //---------------------------------------------------------------
+
+    await assert.rejects(async () => {
+        await realtime.on("undefined", null);
+    },
+    new Error("$func is null / undefined"),
+    "Expected error was not thrown");
+
+    //---------------------------------------------------------------
+
+    await assert.rejects(async () => {
+        await realtime.on("undefined", undefined);
+    },
+    new Error("$func is null / undefined"),
+    "Expected error was not thrown");
+
+    //---------------------------------------------------------------
+
+    await assert.rejects(async () => {
+        await realtime.on(123, () => {});
+    },
+    new Error("Expected $topic type -> string. Instead receieved -> number"),
+    "Expected error was not thrown");
+
+    //---------------------------------------------------------------
+
+    await assert.rejects(async () => {
+        await realtime.on("hello_world", "() => {}");
+    },
+    new Error("Expected $listener type -> function. Instead receieved -> string"),
+    "Expected error was not thrown");
+
+    //---------------------------------------------------------------
+
+    await realtime.on("hello_world", () => {});
+
+    var eventFunc = realtime.testGetEventMap();
+    var topicMap = realtime.testGetTopicMap();
+
+    assert.strictEqual(topicMap.includes("hello_world"), true)
+    assert.strictEqual(topicMap.length > 0, true)
+
+    assert.notStrictEqual(eventFunc["hello_world"], null)
+    assert.notStrictEqual(eventFunc["hello_world"], undefined)
+    assert.strictEqual(typeof eventFunc["hello_world"], "function")
 });
 
-test("Testing create or join room with retry", async () => {
-    var createRoomMethod = realTimeEnabled.testCreateOrJoinRoom();
-    expect(createRoomMethod).not.toBeNull();
+test("off() test", async () => {
+    var realtime = new Realtime({
+        api_key: process.env.user_key,
+        secret: process.env.secret
+    });
 
-    var retryMethod = realTimeEnabled.testRetryTillSuccess();
-    expect(retryMethod).not.toBeNull();
+    await assert.rejects(async () => {
+        await realtime.off(null);
+    },
+    new Error("$topic is null / undefined"),
+    "Expected error was not thrown");
 
-    // Invalid topics
-    var reservedEvents = ["CONNECTED", "DISCONNECTED", "connect", "room-message", "room-join", "disconnect"];
+    await assert.rejects(async () => {
+        await realtime.off(undefined);
+    },
+    new Error("$topic is null / undefined"),
+    "Expected error was not thrown");
 
-    for(let i = 0; i < reservedEvents.length; i++){
-        var response = await retryMethod(createRoomMethod, 5, 1, reservedEvents[i]);
-        expect(response).toBeFalsy();
-    }
+    await assert.rejects(async () => {
+        await realtime.off(123);
+    },
+    new Error("Expected $topic type -> string. Instead receieved -> number"),
+    "Expected error was not thrown");
 
-    // Valid topic
-    var response = await retryMethod(createRoomMethod, 5, 1, "test-topic");
-    expect(response).toBeTruthy();
+    var status = await realtime.off("hello");
+
+    assert.strictEqual(status, true)
+
+    var eventFunc = realtime.testGetEventMap();
+    var topicMap = realtime.testGetTopicMap();
+    var consumerMap = realtime.testGetConsumerMap();
+
+    assert.strictEqual(!topicMap.includes("hello"), true)
+    assert.strictEqual(eventFunc["hello"], undefined)
+    assert.strictEqual(consumerMap["hello"], undefined)
 });
 
-test("Testing setting remote user", async () => {
-    var retryMethod = realTimeEnabled.testRetryTillSuccess();
-    expect(retryMethod).not.toBeNull();
+test("Get stream name test", () => {
+    var realtime = new Realtime({
+        api_key: process.env.user_key,
+        secret: process.env.secret
+    });
 
-    var setRemoteUser = realTimeEnabled.testSetRemoteUser();
-    expect(setRemoteUser).not.toBeNull();
+    realtime.namespace = "spacex-dragon-program"
 
-    var response = await setRemoteUser();
-    expect(response.success).toBeTruthy();
-    expect(response.output).toBeNull();
+    var getStreamName = realtime.testGetStreamName();
+    var getStreamTopic = realtime.testGetStreamTopic();
 
-    // With retry
-    response = await retryMethod(setRemoteUser, 5, 1);
-    expect(response).toBeNull();
+    var name = getStreamName();
+    assert.strictEqual(name, "spacex-dragon-program_stream")
+
+    var topic = getStreamTopic("hello_world")
+    assert.strictEqual(topic, "spacex-dragon-program_stream_hello_world")
+
+    realtime.namespace = null;
+
+    assert.throws(() => {
+        getStreamName();
+    }, 
+    new Error("$namespace is null. Cannot initialize program with null $namespace"),
+    "Expected error was not thrown")
+
+    assert.throws(() => {
+        getStreamTopic("hello_world");
+    }, 
+    new Error("$namespace is null. Cannot initialize program with null $namespace"),
+    "Expected error was not thrown")
 });
 
 test("Test isTopicValidMethod()", () => {
-    var reservedTopics = ["connect", "room-message", "room-join", "disconnect",
-        "ping", "reconnect_attempt", "reconnect_failed", "room-message-ack",
-        "exit-room", "relay-to-room", "enter-room", "set-user", "CONNECTED", "DISCONNECTED",
+    var reservedTopics = ["CONNECTED", "DISCONNECTED",
         "RECONNECT", "RECONNECTED", "RECONNECTING", "RECONN_FAIL", "MESSAGE_RESEND"
     ];
 
     reservedTopics.forEach(topic => {
         var valid = realTimeEnabled.isTopicValid(topic);
-        expect(valid).toBeFalsy();
+        assert.strictEqual(valid, false);
     });
 
     var unreservedInvalidTopics = [null, undefined, 1234, 
@@ -372,140 +421,13 @@ test("Test isTopicValidMethod()", () => {
         
     unreservedInvalidTopics.forEach(topic => {
         var valid = realTimeEnabled.isTopicValid(topic);
-        expect(valid).toBeFalsy();
+        assert.strictEqual(valid, false);
     });
 
     var unreservedValidTopics = ["hello", "test-room", "heyyyyy", "room-connect"]; 
 
     unreservedValidTopics.forEach(topic => {
         var valid = realTimeEnabled.isTopicValid(topic);
-        expect(valid).toBeTruthy();
+        assert.strictEqual(valid, true);
     });
-});
-
-test("Test History API: Get By ID", async () => {
-    // Test checks success response
-    const successData = {
-        "status": "SUCCESS", 
-        "data": {
-            id: '3341c5b0-d415-49a6-b5d5-3eccb6cbb858',
-            timestamp: 1731601490044,
-            topic: 'hello',
-            message: { data: 'heyyywsdasda' }
-        }
-    };
-
-    axios.get.mockResolvedValue({
-        data: successData
-    });
-
-    var response = await realTimeEnabled.history.getMessageById(successData["data"]["id"]);
-
-    expect(response["id"]).toBe(successData["data"]["id"]);
-    expect(response["timestamp"]).toBe(successData["data"]["timestamp"]);
-    expect(response["topic"]).toBe(successData["data"]["topic"]);
-    expect(response["message"]).toBe(successData["data"]["message"]);
-
-    // Now passing in a null & undefined message id
-    response = await realTimeEnabled.history.getMessageById(null);
-    expect(response).toBeNull();
-
-    response = await realTimeEnabled.history.getMessageById(undefined);
-    expect(response).toBeNull();
-
-    // Getting invalid response from the server
-    var invalidData = {
-        "status": "FAIL", 
-        "data": {}
-    };
-
-    axios.get.mockResolvedValue({
-        data: invalidData
-    });
-
-    var response = await realTimeEnabled.history.getMessageById(successData["data"]["id"]);
-    expect(response).toBeNull();
-
-    // Do not send status message
-    invalidData = {
-        "data": {}
-    };
-
-    axios.get.mockResolvedValue({
-        data: invalidData
-    });
-
-    var response = await realTimeEnabled.history.getMessageById(successData["data"]["id"]);
-    expect(response).toBeNull();
-});
-
-test("Test History Since API", async () => {
-    // Test checks success response
-    const successData = {
-        "status": "SUCCESS", 
-        "data": [
-            {
-                id: '3341c5b0-d415-49a6-b5d5-3eccb6cbb858',
-                timestamp: 1731601490044,
-                topic: 'hello',
-                message: { data: 'hey 1' }
-            },
-            {
-                id: '123add-d415-49a6-b5d5-3eccb6cbb858',
-                timestamp: 1731601700044,
-                topic: 'hello',
-                message: { data: 'hey 2' }
-            },
-            {
-                id: 'asdasda-d415-49a6-b5d5-3eccb6cbb858',
-                timestamp: 1731608090044,
-                topic: 'hello',
-                message: { data: 'hey 3' }
-            },
-            {
-                id: 'gfhfgh-d415-49a6-b5d5-3eccb6cbb858',
-                timestamp: 1731609090044,
-                topic: 'hello',
-                message: { data: 'hey 4' }
-            }
-        ]
-    };
-
-    axios.get.mockResolvedValue({
-        data: successData
-    });
-
-    var response = await realTimeEnabled.history.getMessageById("hello", 1731609090044, 1, 1000);
-
-    expect(response).not.toBeNull();
-    expect(response.length > 0 && response.length <= 1000).toBeTruthy();
-
-    response.forEach((item) => {
-        expect(item["topic"]).toBe("hello");
-    });
-
-    // Getting invalid response from the server
-    var invalidData = {
-        "status": "FAIL", 
-        "data": {}
-    };
-
-    axios.get.mockResolvedValue({
-        data: invalidData
-    });
-
-    var response = await realTimeEnabled.history.getMessageById(1731609090044, 1, 1000);
-    expect(response).toBeNull();
-
-    // Do not send status message
-    invalidData = {
-        "data": {}
-    };
-
-    axios.get.mockResolvedValue({
-        data: invalidData
-    });
-
-    var response = await realTimeEnabled.history.getMessageById(1731609090044, 1, 1000);
-    expect(response).toBeNull();
 });

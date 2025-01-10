@@ -1,30 +1,29 @@
-import { io } from "socket.io-client";
 import { History } from "./history.js";
 import axios from 'axios';
-import * as msgPackParser from 'socket.io-msgpack-parser';
+import { connect, JSONCodec, Events, DebugEvents, AckPolicy, ReplayPolicy, credsAuthenticator } from "nats";
+import { DeliverPolicy, jetstream, jetstreamManager } from "@nats-io/jetstream";
+import { readFileSync } from "fs"
 
 export class Realtime {
 
     #baseUrl = "";
 
+    #natsClient = null; 
+    #codec = JSONCodec();
+    #jetstream = null;
+    #jsManager = null;
+    #streamTracker = []; 
+    #consumerMap = {};
+
     #event_func = {}; 
     #topicMap = []; 
-    #roomKeyEvents = ["connect", "room-message", "room-join", "disconnect",
-        "ping", "reconnect_attempt", "reconnect_failed", "room-message-ack",
-        "exit-room", "relay-to-room", "enter-room", "set-user"
-    ];
+
+    #config = "CiAgICAgICAgLS0tLS1CRUdJTiBOQVRTIFVTRVIgSldULS0tLS0KICAgICAgICBKV1RfS0VZCiAgICAgICAgLS0tLS0tRU5EIE5BVFMgVVNFUiBKV1QtLS0tLS0KCiAgICAgICAgKioqKioqKioqKioqKioqKioqKioqKioqKiBJTVBPUlRBTlQgKioqKioqKioqKioqKioqKioqKioqKioqKgogICAgICAgIE5LRVkgU2VlZCBwcmludGVkIGJlbG93IGNhbiBiZSB1c2VkIHRvIHNpZ24gYW5kIHByb3ZlIGlkZW50aXR5LgogICAgICAgIE5LRVlzIGFyZSBzZW5zaXRpdmUgYW5kIHNob3VsZCBiZSB0cmVhdGVkIGFzIHNlY3JldHMuCgogICAgICAgIC0tLS0tQkVHSU4gVVNFUiBOS0VZIFNFRUQtLS0tLQogICAgICAgIFNFQ1JFVF9LRVkKICAgICAgICAtLS0tLS1FTkQgVVNFUiBOS0VZIFNFRUQtLS0tLS0KCiAgICAgICAgKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKgogICAgICAgIA=="
 
     // Status Codes
     #RECONNECTING = "RECONNECTING";
     #RECONNECTED = "RECONNECTED";
     #RECONN_FAIL = "RECONN_FAIL";
-
-    // Retry attempts
-    publishRetryAttempt = 0; 
-    maxPublishRetries = 5;
-
-    roomExitAttempt = 0; 
-    roomExitRetries = 5; 
 
     setRemoteUserAttempts = 0;
     setRemoteUserRetries = 5; 
@@ -32,6 +31,8 @@ export class Realtime {
     // Retry attempts end
     reconnected = false;
     disconnected = true;
+    reconnecting = false;
+    connected = false;
 
     // Offline messages
     #offlineMessageBuffer = [];
@@ -42,16 +43,33 @@ export class Realtime {
     // Test Variables
     #timeout = 1000;
 
-    constructor(api_key){
-        this.api_key = api_key;
-        this.namespace = ""; 
+    #maxPublishRetries = 5; 
 
-        // Init History API
-        this.history = new History(api_key);
+    constructor(config){
+        if(typeof config != "object"){
+            throw new Error("Realtime($config). $config not object => {}")
+        }
+
+        if(config != null && config != undefined){
+            this.api_key = config.api_key != undefined ? config.api_key : null;
+            this.secret = config.secret != undefined ? config.secret : null;
+
+            if(this.api_key == null){
+                throw new Error("api_key value null")
+            }
+
+            if(this.secret == null){
+                throw new Error("secret value null")
+            }
+        }else{
+            throw new Error("{api_key: <value>, secret: <value>} not passed in constructor")
+        }
+
+        this.namespace = null;
     }
 
     /*
-    Initialized library with configuration options. Gets namespace from REST API
+    Initialized library with configuration options.
     */
     async init(staging, opts){
         /**
@@ -94,24 +112,36 @@ export class Realtime {
         this.staging = staging; 
 
         if (staging !== undefined || staging !== null){
-            this.#baseUrl = staging ? "http://localhost:3000" : "http://128.199.176.185:3000";
+            this.#baseUrl = staging ? [
+                "nats://0.0.0.0:4221",
+                "nats://0.0.0.0:4222",
+                "nats://0.0.0.0:4223",
+                "nats://0.0.0.0:4224",
+                "nats://0.0.0.0:4225",
+                "nats://0.0.0.0:4226"] : 
+                [
+                    "nats://api.relay-x.io:4221",
+                    "nats://api.relay-x.io:4222",
+                    "nats://api.relay-x.io:4223",
+                    "nats://api.relay-x.io:4224",
+                    "nats://api.relay-x.io:4225",
+                    "nats://api.relay-x.io:4226",
+                ];
         }else{
-            this.#baseUrl = "http://128.199.176.185:3000";
+            this.#baseUrl = [
+                "nats://api.relay-x.io:4221",
+                "nats://api.relay-x.io:4222",
+                "nats://api.relay-x.io:4223",
+                "nats://api.relay-x.io:4224",
+                "nats://api.relay-x.io:4225",
+                "nats://api.relay-x.io:4226",
+            ];
         }
 
         this.#log(this.#baseUrl);
         this.#log(opts);
 
         this.opts = opts;
-
-        // Init History
-        this.history.init(staging, opts?.debug);
-
-        if (this.api_key !== null && this.api_key !== undefined){
-            this.namespace = await this.#getNameSpace();
-        }else{
-            throw new Error("Undefined or null api key in constructor"); 
-        }
     }
 
     /**
@@ -119,472 +149,292 @@ export class Realtime {
      * @returns {string} namespace value. Null if failed to retreive
      */
     async #getNameSpace() {
-        var startTime = Date.now();
-        var urlPart = "/get-namespace"
-
-       try{
-            var response = await axios.get(this.#baseUrl + urlPart,{
-                headers: {
-                    "Authorization": `Bearer ${this.api_key}`
-                }
-            });
-
-            var data = response.data
-
-            this.#log(data)
-
-            this.#logRESTResponseTime(startTime, urlPart);
-
-            if (data?.status === "SUCCESS"){
-                return data.data.namespace;
-            }else{
-                return null;
+        var res = await this.#natsClient.request("accounts.user.get_namespace", 
+            this.#codec.encode({
+                "api_key": this.api_key
+            }),
+            {
+                timeout: 5000
             }
-       }catch(err){
-            console.log(err.message)
-            throw new Error(err.message);
-       }
+        )
+
+        var data = res.json()
+
+        this.#log(data)
+
+        if(data["status"] == "NAMESPACE_RETRIEVE_SUCCESS"){
+            this.namespace = data["data"]["namespace"]
+        }else{
+            this.namespace = null;
+            return
+        }
     }
     
 
     /**
-     * Connects to the websocket server
+     * Connects to the relay network
      */
     async connect(){
-        this.SEVER_URL = `${this.#baseUrl}/${this.namespace}`; 
+        this.SEVER_URL = this.#baseUrl;
 
-        this.socket = io(this.SEVER_URL, {
-            transports: [ "websocket", "polling" ], // Transport by priority
-            reconnectionDelayMax: 500,
-            reconnectionAttempts: 240, // Basically try for 2 mins -> 120,000/500 = 240
-            reconnection: true,
-            cors: {
-                origin: "*"
-            },
-            auth: {
-                "api-key": this.api_key
-            },
-            parser: msgPackParser
-        });
+        var credsFile = this.#getUserCreds(this.api_key, this.secret)
+        credsFile = new TextEncoder().encode(credsFile);
+        var credsAuth = credsAuthenticator(credsFile);
 
-        this.socket.on("connect", async () => {
-            this.#log(`Connect => ${this.socket.id}`);
-            this.disconnected = false;
+        try{
+            this.#natsClient = await connect({ 
+                servers: this.SEVER_URL,
+                noEcho: true,
+                maxReconnectAttempts: 1200,
+                reconnect: true,
+                reconnectTimeWait: 1000,
+                authenticator: credsAuth,
+                token: this.api_key
+            });
 
-            // Let's call the callback function if it exists
+            this.#jsManager = await jetstreamManager(this.#natsClient);
+            this.#jetstream = await jetstream(this.#natsClient);
+
+            await this.#getNameSpace()
+
+            this.connected = true;
+        }catch(err){
+            this.#log("ERR")
+            this.#log(err);
+
+            this.connected = false;
+        }
+
+        if (this.connected == true){
+            this.#log("Connected to server!");
+
+            // Callback on client side
             if (CONNECTED in this.#event_func){
                 if (this.#event_func[CONNECTED] !== null || this.#event_func[CONNECTED] !== undefined){
                     this.#event_func[CONNECTED]()
                 }
             }
 
-            // Execute only on first time connection
-            if(!this.reconnected){
-                // Set remote user
-                await this.#retryTillSuccess(this.#setRemoteUser, 5, 1);
-                
-                // Subscribe to initialized topics
-                await this.#subscribeToTopics();
-            }
-        });
-        
-        /**
-         * Listener to recieve messages from the server.
-         * Executes callback function if initialized by the user
-         */
-        this.socket.on("room-message", async (data) => {
-            this.#log(data)
-            var room = data.room; 
+            this.#natsClient.closed().then(() => {
+                this.#log("the connection closed!");
+            });
+            
+            (async () => {
+                for await (const s of this.#natsClient.status()) {
+                this.#log(s.type)
 
-            if (room in this.#event_func){
-                if (this.#event_func[room] !== null || this.#event_func[room] !== undefined){
-                    this.#event_func[room]({
-                        "id": data.id,
-                        "data": data.data
-                    })
+                switch (s.type) {
+                    case Events.Disconnect:
+                        this.#log(`client disconnected - ${s.data}`);
+
+                        this.connected = false;
+                        this.#streamTracker = []; 
+                        this.#consumerMap = {};
+
+                        if (DISCONNECTED in this.#event_func){
+                            if (this.#event_func[DISCONNECTED] !== null || this.#event_func[DISCONNECTED] !== undefined){
+                                this.#event_func[DISCONNECTED]()
+                            }
+                        }
+                    break;
+                    case Events.LDM:
+                        this.#log("client has been requested to reconnect");
+                    break;
+                    case Events.Update:
+                        this.#log(`client received a cluster update - `);
+                        this.#log(s.data)
+                    break;
+                    case Events.Reconnect:
+                        this.#log(`client reconnected -`);
+                        this.#log(s.data)
+
+                        this.reconnecting = false;
+                        this.connected = true;
+
+                        this.#subscribeToTopics();
+
+                        if(RECONNECT in this.#event_func){
+                            this.#event_func[RECONNECT](this.#RECONNECTED);   
+                        }
+
+                        // Resend any messages sent while client was offline
+                        this.#publishMessagesOnReconnect();
+                    break;
+                    case Events.Error:
+                        this.#log("client got a permissions error");
+                    break;
+                    case DebugEvents.Reconnecting:
+                        this.#log("client is attempting to reconnect");
+
+                        this.reconnecting = true;
+
+                        if(RECONNECT in this.#event_func && this.reconnecting){
+                            this.#event_func[RECONNECT](this.#RECONNECTING);   
+                        }
+                    break;
+                    case DebugEvents.StaleConnection:
+                        this.#log("client has a stale connection");
+                    break;
+                    default:
+                        this.#log(`got an unknown status ${s.type}`);
                 }
-            }
-
-            // await this.sleep(2);
-            // await this.socket.emitWithAck("room-message-ack", data); 
-        });
-
-        /**
-         * Listener to recieve events of user joining or leaving.
-         * Executes callback function defined in on(), if initialized
-         */
-        this.socket.on("room-join", (data) => {
-            var room = data.room; 
-            var event = data.event;
-
-            if (room in this.#event_func){
-                this.#event_func[room](event);
-            }
-        });
-
-        this.socket.io.on("ping", async (cb) => {
-            this.#log("PING");
-        });
-
-        /**
-         * Executes once reconnection is established.
-         * Makes sure client joins all rooms it was previously
-         * connected to.
-         */
-        this.socket.io.on("reconnect", async (attempt) => {
-            this.#log("[RECONN] => Reconnected " + attempt);
-            this.reconnected = true; 
-            this.disconnected = false;
-
-            if(RECONNECT in this.#event_func){
-                this.#event_func[RECONNECT](this.#RECONNECTED);   
-            }
-
-            // Set remote user data again
-            await this.#retryTillSuccess(this.#setRemoteUser, 5, 1);
-
-            this.#log(this.#topicMap);
-
-            // Join rooms again
-            await this.#rejoinRoom(); 
-
-            // Resend messages that couldn't be sent
-            var output = await this.#publishMessagesOnReconnect();
-
-            // Let the user know that the messages were sent
-            if(output.length > 0){
-                if(MESSAGE_RESEND in this.#event_func){
-                    this.#event_func[MESSAGE_RESEND](output);   
                 }
-            }
-        });
+            })().then();
 
-        /**
-         * Fires when reconnection attempt is made
-         */
-        this.socket.io.on("reconnect_attempt", (attempt) => {
-            this.#log("[RECON_ATTEMPT] => " + attempt);
-
-            this.reconnected = false;
-
-            if (attempt === 1){
-                if(RECONNECT in this.#event_func){
-                    this.#event_func[RECONNECT](this.#RECONNECTING);   
-                }
-            }
-        });
-
-        /**
-         * Fires when reconnection attempt failed
-         */
-        this.socket.io.on("reconnect_failed", () => {
-            this.#log("[RECONN_FAIL] => Reconnection failed");
-
-            if(RECONNECT in this.#event_func){
-                this.#event_func[RECONNECT](this.#RECONN_FAIL);   
-            }
-
-            // Clearing out offline messages on failure to reconnect
-            this.#offlineMessageBuffer.length = 0;
-        });
-        
-        /**
-         * Fires when socket is disconnected from server.
-         * Also executes callback (if initialized) on user thread.
-         */
-        this.socket.on("disconnect", (reason, details) => {
-            this.#log(reason, details);
-            this.#log("Disconnected"); 
-
-            this.disconnected = true;
-    
-            // Removing all listeners
-            // this.socket.removeAllListeners();
-
-            var status = "";
-
-            if (reason == "io server disconnect"){
-                status = "SERVER_FORCEFULLY_DISCONNECTED_THIS_USER";
-            }else if(reason == "io client disconnect"){
-                status = "MANUAL_CONNECTION_CLOSE_BY_USER";
-            }else if(reason == "ping timeout"){
-                status = "HEARTBEAT_TIMEOUT";
-            }else if(reason == "transport close"){
-                status = "SERVER_DISCONNECTED_THIS_USER";
-            }else if(reason == "transport error"){
-                status = "CONNECTION_ERROR";
-            }
-
-            // Let's call the callback function if it exists
-            if (DISCONNECTED in this.#event_func){
-                if (this.#event_func[DISCONNECTED] !== null || this.#event_func[DISCONNECTED] !== undefined){
-                    this.#event_func[DISCONNECTED](status)
-                }
-            }
-        });
+            // Subscribe to topics
+            this.#subscribeToTopics();
+        }
     }
 
     /**
      * Closes connection
      */
     close(){
-        if(this.socket !== null && this.socket !== undefined){
+        if(this.#natsClient !== null){
             this.reconnected = false;
             this.disconnected = true;
 
-            this.socket.disconnect();
+            this.#natsClient.close();
         }else{
             this.#log("Null / undefined socket, cannot close connection");
         }
     }
 
+    /**
+     * Start consumers for topics initialized by user
+     */
     async #subscribeToTopics(){
         this.#topicMap.forEach(async (topic) => {
-            this.#log(topic)
-            // Are we connected to this room?
-            var subscribed = await this.#retryTillSuccess(this.#createOrJoinRoom, 5, 1, topic);
-    
-            if (!subscribed){
-                this.#event_func[topic]({
-                    "status": "TOPIC_SUBSCRIBE",
-                    "subscribed": false
-                }); 
-            }
+            // Subscribe to stream
+            await this.#startConsumer(topic); 
         });
     }
 
     /**
      * Deletes reference to user defined event callback.
-     * This will "stop listening to an event"
+     * This will stop listening to a topic
      * @param {string} topic 
+     * @returns {boolean} - To check if topic unsubscribe was successful
      */
     async off(topic){
-        return await this.#retryTillSuccess(this.#off, 5, 1, topic); 
-    }
-
-    async #off(topic){
-        var success = false; 
-        var response = null; 
-        var ackTimeout = this.#getAckTimeout()
-
-        var startTime = Date.now();
-
-        try{
-            if (this.#topicMap.includes(topic)){
-                response = await this.socket.timeout(ackTimeout).emitWithAck("exit-room", {
-                    "room": topic
-                });
-            }else{
-                response = {
-                    "status": "TOPIC_EXIT",
-                    "exit": true
-                }
-            }
-
-            this.#topicMap = this.#topicMap.filter(item => item !== topic);
-
-            success = true; 
-        }catch(err){
-            this.#log(err);
-
-            response = {
-                "status": "TOPIC_EXIT",
-                "exit": false
-            }
-
-            success = false;
+        if(topic == null || topic == undefined){
+            throw new Error("$topic is null / undefined")
         }
 
-        this.#logSocketResponseTime(startTime, {
-            "type": "topic_unsubscribe", // TODO: Document
-            "status": response["status"],
-            "room": topic
-        })
-
-        return {
-            success: success,
-            output: response
+        if(typeof topic !== "string"){
+            throw new Error(`Expected $topic type -> string. Instead receieved -> ${typeof topic}`);
         }
+
+        this.#topicMap = this.#topicMap.filter(item => item !== topic);
+
+        delete this.#event_func[topic];
+
+        return await this.#deleteConsumer(topic);
     }
 
     /**
-     * Subscribes to a topic by joining a room
-     * @param {string} topic - Name of the room
+     * Subscribes to a topic
+     * @param {string} topic - Name of the event
      * @param {function} func - Callback function to call on user thread
      * @returns {boolean} - To check if topic subscription was successful
      */
     async on(topic, func){
+        if(topic == null || topic == undefined){
+            throw new Error("$topic is null / undefined")
+        }
+
+        if(func == null || func == undefined){
+            throw new Error("$func is null / undefined")
+        }
+
         if ((typeof func !== "function")){
             throw new Error(`Expected $listener type -> function. Instead receieved -> ${typeof func}`);
         }
         
         if(typeof topic !== "string"){
-            throw new Error(`Expected $topic type -> string. Instead receieved -> ${typeof func}`);
+            throw new Error(`Expected $topic type -> string. Instead receieved -> ${typeof topic}`);
         }
 
-        if ((topic !== null || topic != undefined) && (func !== null || func !== undefined)){
-            if(!this.#roomKeyEvents.includes(topic)){
-                this.#event_func[topic] = func; 
+        if(!(topic in this.#event_func)){
+            this.#event_func[topic] = func; 
+        }
 
-                if (![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
-                    this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND, ...this.#roomKeyEvents].includes(topic)){
-                        this.#topicMap.push(topic);
+        if (![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
+            this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND].includes(topic)){
+                if(!this.#topicMap.includes(topic)){
+                    this.#topicMap.push(topic);
                 }
 
-                return true
-            }else{
-                return false;
+            if(this.connected){
+                // Connected we need to create a topic in a stream
+                await this.#startConsumer(topic);
             }
-        }else{
-            return false;
         }
     }
 
     /**
      * A method to send a message to a topic.
      * Retry methods included. Stores messages in an array if offline.
-     * @param {string} topic - Name of the room
+     * @param {string} topic - Name of the event
      * @param {object} data - Data to send
      * @returns 
      */
-    async publish(topic, data, callback){
+    async publish(topic, data){
+        if(topic == null || topic == undefined){
+            throw new Error("$topic is null or undefined");
+        }
+
+        if(topic == ""){
+            throw new Error("$topic cannot be an empty string")
+        }
+
+        if(typeof topic !== "string"){
+            throw new Error(`Expected $topic type -> string. Instead receieved -> ${typeof topic}`);
+        }
+
+        if(!this.isTopicValid(topic)){
+            throw new Error("Invalid topic, use isTopicValid($topic) to validate topic")
+        }
+
+        var start = Date.now()
         var messageId = crypto.randomUUID();
 
-        this.#log(`SOCKET CONNECTED => ${this.socket.connected}`);
+        var message = {
+            "client_id": this.#getClientId(),
+            "id": messageId,
+            "room": topic,
+            "message": data,
+            "start": Date.now()
+        }
 
-        if(this.socket.connected){
-            var retries = this.#getPublishRetry(); 
-            return await this.#retryTillSuccess(this.#publish, retries, 1, messageId, topic, data, callback);
+        var encodedMessage = this.#codec.encode(message)
+
+        if(this.connected){
+            if(!this.#topicMap.includes(topic)){
+                this.#topicMap.push(topic);
+
+                await this.#createOrGetStream();
+            }else{
+                this.#log(`${topic} exists locally, moving on...`)
+            }
+
+            this.#log(`Publishing to topic => ${this.#getStreamTopic(topic)}`)
+    
+            const ack = await this.#jetstream.publish(this.#getStreamTopic(topic), encodedMessage);
+            this.#log(`Publish Ack =>`)
+            this.#log(ack)
+    
+            var latency = Date.now() - start;
+            this.#log(`Latency => ${latency} ms`);
+
+            return ack !== null && ack !== undefined;
         }else{
             this.#offlineMessageBuffer.push({
-                "id": messageId,
-                "room": topic,
-                "data": data
+                topic: topic, 
+                message: data
             });
 
-            return {
-                "message": {
-                    "id": messageId,
-                    "topic": topic,
-                    "message": data
-                },
-                "status": "PUBLISH_FAIL_TO_SEND",
-                "sent": false,
-                "connected": this.socket.connected,
-                "err": "Not connected to server"
-            };
-        }
-    }
-
-    async #publish(id, topic, data, callback){
-        var subscribed = false;
-        var success = false;
-        var ackTimeout = this.#getAckTimeout();
-
-        var relayResponse = null;
-        
-        var processStart = Date.now();
-
-        try{
-            if ((topic !== null && topic !== undefined) && (data !== null && data !== undefined)){
-                if(!this.#topicMap.includes(topic)){
-                    // Are we connected to this room?
-                    subscribed = await this.#retryTillSuccess(this.#createOrJoinRoom, 5, 1, topic);
-                }else{
-                    subscribed = true;
-                }
-
-                this.#logSocketResponseTime(processStart, {
-                    "type": "topic_subscribe_only" // TODO: Document
-                })
-
-                if(subscribed){
-                    var start = Date.now();
-
-                    relayResponse = await this.socket.timeout(ackTimeout).emitWithAck("relay-to-room", {
-                        "id": id,
-                        "room": topic,
-                        "message": data
-                    });
-
-                    // RELAY_FAILURE will set sent = false
-                    relayResponse["message"] = {
-                        "id": id,
-                        "topic": topic,
-                        "message": data
-                    };
-                    relayResponse["sent"] = relayResponse["status"] == "ACK_SUCCESS"; 
-                    relayResponse["connected"] = this.socket.connected;
-
-                    var end = Date.now()
-                    var latency = end - start;
-                    this.#log(`LATENCY => ${latency} ms`);
-
-                    if(callback !== null && callback !== undefined){
-                        callback(latency);
-                    }
-
-                    // Log the metrics
-                    this.#logSocketResponseTime(start, {
-                        "type": "publish_only" // TODO: Document
-                    });
-
-
-                }else{
-                    this.#log(`Unable to send message, topic not subscribed to`);
-
-                    relayResponse = {
-                        "message": {
-                            "id": id,
-                            "topic": topic,
-                            "message": data
-                        },
-                        "status": "PUBLISH_FAIL_TO_SEND",
-                        "sent": false,
-                        "connected": this.socket.connected,
-                        "message": `Unable to subscribe to topic ${topic}`
-                    }
-                }
-
-                success = true;
-            }else{
-                success = false; 
-                relayResponse = {
-                    "status": "PUBLISH_INPUT_ERR", 
-                    "sent": false,
-                    "connected": this.socket.connected,
-                    "message": `topic is ${topic} || data is ${data}`
-                }
-            }
-        }catch(err){
-            this.#log(err);
-
-            relayResponse = {
-                "message": {
-                    "id": id,
-                    "topic": topic,
-                    "message": data
-                },
-                "status": "PUBLISH_FAIL_TO_SEND",
-                "sent": false,
-                "connected": this.socket.connected,
-                "err": err.message
-            }
-
-            success = false;
-        }
-
-        this.#logSocketResponseTime(processStart, {
-            "type": "publish_full", // TODO: Document
-            "status": relayResponse["status"],
-            "sent": relayResponse["sent"],
-            "connected": relayResponse["connected"],
-            "err": relayResponse["err"]
-        })
-
-        return {
-            success: success,
-            output: relayResponse
+            return false;
         }
     }
 
@@ -597,164 +447,187 @@ export class Realtime {
         var messageSentStatus = [];
 
         for(let i = 0; i < this.#offlineMessageBuffer.length; i++){
-            let message = this.#offlineMessageBuffer[i];
+            let data = this.#offlineMessageBuffer[i];
             
-            var id = message.id;
-            var topic = message.room;
-            var data = message.data;
+            const topic = data.topic;
+            const message = data.message;
 
-            // Metrics logging
-            var startTime = Date.now();
+            const output = await this.publish(topic, message);
 
-            var retries = this.#getPublishRetry(); 
-            var output = await this.#retryTillSuccess(this.#publish, retries, 1, id, topic, data);
-
-            // Log the metrics
-            this.#logSocketResponseTime(startTime, {
-                "type": "publish_retry_on_connect" // TODO: Document
+            messageSentStatus.push({
+                topic: topic,
+                message: message,
+                resent: output
             });
-
-            messageSentStatus.push(output);
         }
 
         // Clearing out offline messages
         this.#offlineMessageBuffer.length = 0;
 
-        return messageSentStatus;
+        // Send to client
+        if(MESSAGE_RESEND in this.#event_func && messageSentStatus.length > 0){
+            this.#event_func[MESSAGE_RESEND](messageSentStatus);
+        }
     }
 
     // Room functions
-
     /**
-     * Creates a room or joins one. Does not join if
-     * already part of one
-     * @param {string} topic - Name of the room 
-     * @returns {boolean} - True if joined successfully else false.
+     * Starts consumer for particular topic if stream exists
+     * @param {string} topic 
      */
-    async #createOrJoinRoom(topic){
-        var subscribed = false;
-        var ackTimeout = this.#getAckTimeout();
+    async #startConsumer(topic){
+        await this.#createOrGetStream();
 
-        var response = null;
+        var opts = { 
+            name: topic,
+            filter_subjects: [this.#getStreamTopic(topic), this.#getStreamTopic(topic) + "_presence"],
+            replay_policy: ReplayPolicy.Instant,
+            opt_start_time: new Date(),
+        }
 
-        var startTime = Date.now();
+        const consumer = await this.#jetstream.consumers.get(this.#getStreamName(), opts);
+        this.#log(this.#topicMap)
+        this.#log("Consumer is consuming");
 
-        try{
-            if (this.isTopicValid(topic)){
-                // If not, connect and wait for an ack
-                response = await this.socket.timeout(ackTimeout).emitWithAck("enter-room", {
-                    "room": topic
-                });
-    
-                this.#log(response);
-    
-                if (response["status"] == "JOINED_ROOM" || response["status"] == "ROOM_CREATED" ||
-                    response["status"] == "ALREADY_IN_ROOM"){
-                    subscribed = true; 
-                }else{
-                    subscribed = false; 
+        this.#consumerMap[topic] = consumer;
+
+        await consumer.consume({
+            callback: (msg) => {
+
+                msg.ack();
+
+                try{
+                    var data = this.#codec.decode(msg.data);
+                    var room = data.room;
+
+                    this.#log(data);
+                    const latency = Date.now() - data.start
+                    this.#log(`Latency => ${latency}`)
+
+                    // Push topic message to main thread
+                    if (room in this.#event_func && data.client_id != this.#getClientId()){
+                        this.#event_func[room]({
+                            "id": data.id,
+                            "data": data.message
+                        });
+                    }
+                }catch(err){
+                    this.#log("Consumer err " + err);
+                    msg.nack();
                 }
-            }else{
-                throw new Error(`Reserved topic => '${topic}'. Do not use!`);
             }
-        }catch(err){
-            this.#log(err);
-
-            response = {
-                "status": "ROOM_JOIN_ERR",
-                "err": err.message
-            }
-
-            subscribed = false;
-        }
-
-        this.#logSocketResponseTime(startTime, {
-            "type": "create_or_join_room", // TODO: Document
-            "status": response["status"],
-            "err": response["err"]
         });
-
-        return {
-            success: subscribed,
-            output: subscribed
-        }; 
     }
 
     /**
-     * Rejoins room on reconnection
-     * @param {string} topic - Name of the room
-     * @returns {boolean} - True if rejoined successfully else false.
+     * Deletes consumer
+     * @param {string} topic 
      */
-    async #rejoinRoom(){
-        this.#topicMap.forEach(async (topic) => {
-            var startTime = Date.now();
+    async #deleteConsumer(topic){
+        const consumer = this.#consumerMap[topic]
 
-            // If not, connect and wait for an ack
-            var subscribed = await this.#retryTillSuccess(this.#createOrJoinRoom, 5, 1, topic);
+        var del = false;
 
-            this.#event_func[topic]({
-                "type": "RECONNECTION_STATUS",
-                "initialized_topic": subscribed
-            });
-
-            this.#logSocketResponseTime(startTime, {
-                "type": "rejoin_room", // TODO: Document
-                "room": topic,
-                "subscribed": subscribed
-            });
-        });
-    }
-
-    // User functions
-    setUser(user){
-        this.user = user; 
-    }
-
-    getUser(){
-        return this.user !== null && this.user !== undefined ? this.user : null;
-    }
-
-    async #setRemoteUser(){
-        var userData = this.getUser();
-        var success = false;
-        var ackTimeout = this.#getAckTimeout();
-
-        try{
-            if (userData !== null && userData !== undefined){
-                await this.socket.timeout(ackTimeout).emitWithAck("set-user", {
-                    user_data: userData
-                });
-            }else{
-                console.log("No user object found, skipping setting user");
-            }
-
-            success = true; 
-        }catch(err){
-            this.#log(err); 
-
-            success = false; 
+        if (consumer != null && consumer != undefined){
+            del = await consumer.delete();
+        }else{
+            del = true
         }
 
-        return {
-            success: success,
-            output: null
+        delete this.#consumerMap[topic];
+
+        return del;
+    }
+
+    /**
+     * Gets stream if it exists or creates one
+     * @param {string} streamName 
+     */
+    async #createOrGetStream(){
+        const streamName = this.#getStreamName();
+        var stream = null;
+        
+        try{
+            stream = await this.#jsManager.streams.info(streamName);
+        }catch(err){
+            stream = null;
+        }
+
+        this.#log(`STREAM => ${stream}`)
+
+        if (stream == null){
+            // Stream does not exist, create one
+            await this.#jsManager.streams.add({
+                name: streamName,
+                subjects: [...this.#getStreamTopicList(), ...this.#getPresenceTopics()],
+                ack_policy: AckPolicy.Explicit,
+                delivery_policy: DeliverPolicy.New
+            });
+
+            this.#log(`${streamName} created`);
+        }else{
+            stream.config.subjects = [...this.#getStreamTopicList(), ...this.#getPresenceTopics()];
+            await this.#jsManager.streams.update(streamName, stream.config);
+
+            this.#log(`${streamName} exists, updating and moving on...`);
         }
     }
 
     // Utility functions
+    #getClientId(){
+        return this.#natsClient?.info?.client_id
+    }
 
     /**
      * Checks if a topic can be used to send messages to.
-     * @param {string} topic 
-     * @returns 
+     * @param {string} topic - Name of event
+     * @returns {boolean} - If topic is valid or not
      */
     isTopicValid(topic){
         if(topic !== null && topic !== undefined && (typeof topic) == "string"){
             return ![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
-                this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND,...this.#roomKeyEvents].includes(topic);
+                this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND].includes(topic);
         }else{
             return false;
         }
+    }
+
+    #getStreamName(){
+        if(this.namespace != null){
+            return this.namespace + "_stream"
+        }else{
+            this.close();
+            throw new Error("$namespace is null. Cannot initialize program with null $namespace")
+        }
+    }
+
+    #getStreamTopic(topic){
+        if(this.namespace != null){
+            return this.namespace + "_stream_" + topic;
+        }else{
+            this.close();
+            throw new Error("$namespace is null. Cannot initialize program with null $namespace")
+        }
+    }
+
+    #getStreamTopicList(){
+        var topics = [];
+
+        this.#topicMap.forEach((topic) => {
+            topics.push(this.#getStreamTopic(topic))
+        })
+
+        return topics
+    }
+
+    #getPresenceTopics(){
+        var presence = [];
+
+        this.#topicMap.forEach((topic) => {
+            presence.push(this.#getStreamTopic(topic) + "_presence")
+        })
+
+        return presence
     }
 
     sleep(ms) {
@@ -768,28 +641,19 @@ export class Realtime {
     }
 
     #getPublishRetry(){
+        this.#log(this.opts)
         if(this.opts !== null && this.opts !== undefined){
             if(this.opts.max_retries !== null && this.opts.max_retries !== undefined){
                 if (this.opts.max_retries <= 0){
-                    return this.maxPublishRetries; 
+                    return this.#maxPublishRetries; 
                 }else{
                     return this.opts.max_retries;
                 }
             }else{
-                return this.maxPublishRetries; 
+                return this.#maxPublishRetries; 
             }
         }else{
-            return this.maxPublishRetries; 
-        }
-    }
-
-    #getAckTimeout(){
-        if(process.env.NODE_ENV == "test"){
-            this.#log(`TIMEOUT -> ${this.#timeout}`)
-            return this.#timeout;
-        }else{
-            this.#timeout = 1000;
-            return 1000;
+            return this.#maxPublishRetries; 
         }
     }
 
@@ -832,46 +696,13 @@ export class Realtime {
         return methodDataOutput;
     }
 
-    /**
-     * Logs client side REST API response time and sends
-     * it to the server for logging
-     * @param {unix timestamp} startTime 
-     * @param {string} url 
-     */
-    async #logRESTResponseTime(startTime, url){
-        var responseTime = Date.now() - startTime;
+    #getUserCreds(jwt, secret){
+        var template = Buffer.from(this.#config, "base64").toString("utf8")
 
-        var data = {
-            "url": url,
-            "response_time": responseTime
-        }
+        var creds = template.replace("JWT_KEY", jwt);
+        creds = creds.replace("SECRET_KEY", secret)
 
-        await axios.post(this.#baseUrl + "/metrics/log", data, {
-            headers: {
-                "Authorization": `Bearer ${this.api_key}`
-            }
-        });
-    }
-
-    /**
-     * Logs client side Socket API response time and sends
-     * it to the server for logging
-     * @param {unix timestamp} startTime 
-     * @param {JSON} data 
-     */
-    async #logSocketResponseTime(startTime, data){
-        var responseTime = Date.now() - startTime;
-
-        var data = {
-            "data": data,
-            "response_time": responseTime
-        }
-
-        await axios.post(this.#baseUrl + "/metrics/socket_log", data, {
-            headers: {
-                "Authorization": `Bearer ${this.api_key}`
-            }
-        });
+        return creds
     }
 
     // Exposure for tests
@@ -891,19 +722,43 @@ export class Realtime {
         }
     }
 
-    testCreateOrJoinRoom(){
+    testGetStreamName(){
         if(process.env.NODE_ENV == "test"){
-            return this.#createOrJoinRoom.bind(this);
+            return this.#getStreamName.bind(this);
         }else{
-            return null;
+            return null; 
         }
     }
 
-    testSetRemoteUser(){
+    testGetStreamTopic(){
         if(process.env.NODE_ENV == "test"){
-            return this.#setRemoteUser.bind(this);
+            return this.#getStreamTopic.bind(this);
         }else{
-            return null;
+            return null; 
+        }
+    }
+
+    testGetTopicMap(){
+        if(process.env.NODE_ENV == "test"){
+            return this.#topicMap
+        }else{
+            return null; 
+        }
+    }
+
+    testGetEventMap(){
+        if(process.env.NODE_ENV == "test"){
+            return this.#event_func
+        }else{
+            return null; 
+        }
+    }
+
+    testGetConsumerMap(){
+        if(process.env.NODE_ENV == "test"){
+            return this.#consumerMap
+        }else{
+            return null; 
         }
     }
 }
