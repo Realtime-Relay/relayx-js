@@ -105,7 +105,7 @@ This event is fired when the library reconnects to the Relay Network. This is on
     ```
     `status` can have values of `RECONNECTING` & `RECONNECTED`.
 
-    `RECONNECTING` => Reconnection attempts have begun. If `status == RECONNECTING`, the `RECONNECT` event if fired every 1 second.<br>
+    `RECONNECTING` => Reconnection attempts have begun. If `status == RECONNECTING`, the `RECONNECT` event is fired every 1 second.<br>
     `RECONNECTED` => Reconnected to the Relay Network.
 3. <b>DISCONNECTED</b><br>
 This event is fired when the library disconnects from the Relay Network. This includes disconnection due to network issues as well.
@@ -134,7 +134,7 @@ This event is fired when the library resends the messages upon reconnection to t
 
 ## API Reference
 1. init()<br>
-Initialized library with configuration options
+Initializes library with configuration options
 2. connect()<br>
 Connects the library to the Relay Network. This is an async function.
 3. close()<br>
@@ -153,4 +153,4 @@ Checks if a topic can be used to send messages to.
      * @param {string} topic - Name of event
      * @returns {boolean} - If topic is valid or not
 5. sleep()<br>
-Pauses code execution for a user defined time. Time passed into the method is in milliseconds.
+Pauses code execution for a user defined time. Time passed into the method is in milliseconds.  This is an async function.
