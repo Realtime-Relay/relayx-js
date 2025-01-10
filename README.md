@@ -23,6 +23,12 @@ Install the relay library by running the command below in your terminal<br>
         secret: process.env.secret,
     });
     realtime.init();
+
+    // Initialization of topic listeners go here... (look at examples/example_chat.js for full implementation)
+
+    realtime.connect();
+
+    // Other application logic...
     ```
 
 ### Usage
@@ -127,10 +133,24 @@ This event is fired when the library resends the messages upon reconnection to t
     ```
 
 ## API Reference
-1. Init method definiton
-2. connect() method definition
-3. close() method definition
-3. on() method definition
-3. off() method definition
-4. isTopicValid() definition
-5. sleep() method definition
+1. init()<br>
+Initialized library with configuration options
+2. connect()<br>
+Connects the library to the Relay Network. This is an async function.
+3. close()<br>
+Disconnects the library from the Relay Network.
+3. on()<br>
+Subscribes to a topic. This is an async function.
+     * @param {string} topic - Name of the event
+     * @param {function} func - Callback function to call on user thread
+     * @returns {boolean} - To check if topic subscription was successful
+3. off()<br>
+Deletes reference to user defined event callback for a topic. This will stop listening to a topic. This is an async function.
+     * @param {string} topic 
+     * @returns {boolean} - To check if topic unsubscribe was successful
+4. isTopicValid()<br>
+Checks if a topic can be used to send messages to.
+     * @param {string} topic - Name of event
+     * @returns {boolean} - If topic is valid or not
+5. sleep()<br>
+Pauses code execution for a user defined time. Time passed into the method is in milliseconds.

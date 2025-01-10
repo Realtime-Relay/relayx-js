@@ -69,7 +69,7 @@ export class Realtime {
     }
 
     /*
-    Initialized library with configuration options. Gets namespace from REST API
+    Initialized library with configuration options.
     */
     async init(staging, opts){
         /**
@@ -172,7 +172,7 @@ export class Realtime {
     
 
     /**
-     * Connects to the websocket server
+     * Connects to the relay network
      */
     async connect(){
         this.SEVER_URL = this.#baseUrl;
@@ -312,8 +312,9 @@ export class Realtime {
 
     /**
      * Deletes reference to user defined event callback.
-     * This will "stop listening to an event"
+     * This will stop listening to a topic
      * @param {string} topic 
+     * @returns {boolean} - To check if topic unsubscribe was successful
      */
     async off(topic){
         if(topic == null || topic == undefined){
@@ -332,8 +333,8 @@ export class Realtime {
     }
 
     /**
-     * Subscribes to a topic by joining a room
-     * @param {string} topic - Name of the room
+     * Subscribes to a topic
+     * @param {string} topic - Name of the event
      * @param {function} func - Callback function to call on user thread
      * @returns {boolean} - To check if topic subscription was successful
      */
@@ -374,7 +375,7 @@ export class Realtime {
     /**
      * A method to send a message to a topic.
      * Retry methods included. Stores messages in an array if offline.
-     * @param {string} topic - Name of the room
+     * @param {string} topic - Name of the event
      * @param {object} data - Data to send
      * @returns 
      */
@@ -579,8 +580,8 @@ export class Realtime {
 
     /**
      * Checks if a topic can be used to send messages to.
-     * @param {string} topic 
-     * @returns 
+     * @param {string} topic - Name of event
+     * @returns {boolean} - If topic is valid or not
      */
     isTopicValid(topic){
         if(topic !== null && topic !== undefined && (typeof topic) == "string"){
