@@ -454,7 +454,8 @@ export class Realtime {
             const output = await this.publish(topic, message);
 
             messageSentStatus.push({
-                msg_id: message.id,
+                topic: topic,
+                message: message,
                 resent: output
             });
         }
