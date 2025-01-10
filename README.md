@@ -120,9 +120,9 @@ This event is fired when the library resends the messages upon reconnection to t
     `messages` is an array of the following object,<br>
     ```json
     {
-        topic: <topic the message belongs to>,
-        message: <message you sent>,
-        resent: <boolean, indicating if the message was sent successully>
+        "topic": "<topic the message belongs to>",
+        "message": "<message you sent>",
+        "resent": "<boolean, indicating if the message was sent successully>"
     }
     ```
 
