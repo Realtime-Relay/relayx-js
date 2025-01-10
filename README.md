@@ -9,14 +9,14 @@ A powerful library for integrating real-time communication into your software st
 
 ## Installation
 Install the relay library by running the command below in your terminal<br>
-`npm install relay-x-js`
+`npm install relayx-js`
 
 ## Usage
 ### Prerequisites
 1. Obtain API key and Secret key
 2. Initialize the library
     ```javascript
-    import { Realtime, CONNECTED, RECONNECT, DISCONNECTED } from "relay-x-js"
+    import { Realtime, CONNECTED, RECONNECT, DISCONNECTED } from "relayx-js"
 
     var realtime = new Realtime({
         api_key: process.env.api_key,
