@@ -9,7 +9,7 @@ A powerful library for integrating real-time communication into your software st
 
 ## Installation
 Install the relay library by running the command below in your terminal<br>
-`npm install relay`
+`npm install relay-x-js`
 
 ## Usage
 ### Prerequisites
