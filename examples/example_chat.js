@@ -7,13 +7,11 @@ const rl = readline.createInterface({
 });
 
 async function run(){
-    // await throttle.start(options["fois"]);
-
     var realtime = new Realtime({
         api_key: process.env.user_key,
         secret: process.env.secret
     });
-    await realtime.init({
+    await realtime.init(true, {
         max_retries: 2,
         debug: true
     });
