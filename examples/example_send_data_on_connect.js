@@ -7,7 +7,7 @@ async function run(){
     });
     await realtime.init(true, {
         max_retries: 2,
-        debug: true
+        // debug: true
     });
 
     realtime.on(CONNECTED, async () => {
@@ -18,10 +18,17 @@ async function run(){
             var value = Math.floor(Math.random() * (100 + 1))
             console.log(value)
 
-            await realtime.publish("test-topic", {
+            // await realtime.publish("test-power-1", {
+            //     "value": value,
+            //     "time": Date.now() + 2000
+            // })
+
+            var sent = await realtime.publish("power-telemetry", {
                 "value": value,
-                "time": Date.now() + 2000
-            })
+                "time": Date.now()
+            });
+
+            console.log(`Message sent => ${sent}`);
 
             await realtime.sleep(100)
         }

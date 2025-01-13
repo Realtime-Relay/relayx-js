@@ -69,7 +69,7 @@ export class Realtime {
     }
 
     /*
-    Initialized library with configuration options.
+    Initializes library with configuration options.
     */
     async init(staging, opts){
         /**
@@ -145,7 +145,7 @@ export class Realtime {
     }
 
     /**
-     * Gets the namespace of the user using a REST API
+     * Gets the namespace of the user using a micro service
      * @returns {string} namespace value. Null if failed to retreive
      */
     async #getNameSpace() {
@@ -483,6 +483,8 @@ export class Realtime {
             filter_subjects: [this.#getStreamTopic(topic), this.#getStreamTopic(topic) + "_presence"],
             replay_policy: ReplayPolicy.Instant,
             opt_start_time: new Date(),
+            ack_policy: AckPolicy.Explicit,
+            delivery_policy: DeliverPolicy.New
         }
 
         const consumer = await this.#jetstream.consumers.get(this.#getStreamName(), opts);
@@ -560,8 +562,6 @@ export class Realtime {
             await this.#jsManager.streams.add({
                 name: streamName,
                 subjects: [...this.#getStreamTopicList(), ...this.#getPresenceTopics()],
-                ack_policy: AckPolicy.Explicit,
-                delivery_policy: DeliverPolicy.New
             });
 
             this.#log(`${streamName} created`);
