@@ -566,7 +566,8 @@ export class Realtime {
 
             this.#log(`${streamName} created`);
         }else{
-            stream.config.subjects = [...this.#getStreamTopicList(), ...this.#getPresenceTopics()];
+            var subs = [...stream.config.subjects, ...this.#getStreamTopicList(), ...this.#getPresenceTopics()];
+            stream.config.subjects = [...new Set(subs)];
             await this.#jsManager.streams.update(streamName, stream.config);
 
             this.#log(`${streamName} exists, updating and moving on...`);
