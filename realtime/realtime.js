@@ -356,28 +356,33 @@ export class Realtime {
         }
 
         if(!(topic in this.#event_func)){
-            if (![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
-                this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND].includes(topic)){
-                    if(!this.isTopicValid(topic)){
-                        throw new Error("Invalid topic, use isTopicValid($topic) to validate topic")
-                    }
-
-                    this.#event_func[topic] = func;
-    
-                    if(!this.#topicMap.includes(topic)){
-                        this.#topicMap.push(topic);
-                    }
-    
-                if(this.connected){
-                    // Connected we need to create a topic in a stream
-                    await this.#startConsumer(topic);
-                }
-            }
-
-            return true;
+            this.#event_func[topic] = func;
         }else{
-            return false;
+            return false
         }
+
+        if (![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
+            this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND].includes(topic)){
+                if(!this.isTopicValid(topic)){
+                    // We have an invalid topic, lets remove it
+                    if(topic in this.#event_func){
+                        delete this.#event_func[topic];
+                    }
+
+                    throw new Error("Invalid topic, use isTopicValid($topic) to validate topic")
+                }
+
+                if(!this.#topicMap.includes(topic)){
+                    this.#topicMap.push(topic);
+                }
+
+            if(this.connected){
+                // Connected we need to create a topic in a stream
+                await this.#startConsumer(topic);
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -541,7 +546,7 @@ export class Realtime {
         if (consumer != null && consumer != undefined){
             del = await consumer.delete();
         }else{
-            del = true
+            del = false
         }
 
         delete this.#consumerMap[topic];
