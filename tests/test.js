@@ -322,7 +322,8 @@ test("on() test", async () => {
 
     //---------------------------------------------------------------
 
-    await realtime.on("hello_world", () => {});
+    var res = await realtime.on("hello_world", () => {});
+    assert.strictEqual(res, true)
 
     var eventFunc = realtime.testGetEventMap();
     var topicMap = realtime.testGetTopicMap();
@@ -333,6 +334,16 @@ test("on() test", async () => {
     assert.notStrictEqual(eventFunc["hello_world"], null)
     assert.notStrictEqual(eventFunc["hello_world"], undefined)
     assert.strictEqual(typeof eventFunc["hello_world"], "function")
+
+    // Realtime already has a reference of this topic, so the return val will be false
+    res = await realtime.on("hello_world", () => {});
+    assert.strictEqual(res, false)
+
+    res = await realtime.on("hello_world", () => {});
+    assert.strictEqual(res, false)
+
+    res = await realtime.on("hello_world", () => {});
+    assert.strictEqual(res, false)
 });
 
 test("off() test", async () => {
@@ -370,6 +381,21 @@ test("off() test", async () => {
     assert.strictEqual(!topicMap.includes("hello"), true)
     assert.strictEqual(eventFunc["hello"], undefined)
     assert.strictEqual(consumerMap["hello"], undefined)
+
+    // Turning off topic multiple times to check for crashes.
+    // Since it is off already, output will be false
+    var status = await realtime.off("hello");
+    assert.strictEqual(status, false)
+
+    var status = await realtime.off("hello");
+    assert.strictEqual(status, false)
+
+    var status = await realtime.off("hello");
+    assert.strictEqual(status, false)
+
+    var status = await realtime.off("hello");
+    assert.strictEqual(status, false)
+
 });
 
 test("Get stream name test", () => {
