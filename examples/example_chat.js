@@ -65,6 +65,8 @@ async function run(){
         }else if(input == "close"){
             realtime.close();
             console.log("Connection closed");
+        }else if(input == "init"){
+            await realtime.connect()
         }else if(input == "on"){
             rl.question("topic: ", async (topic) => {
                 await realtime.on(topic, (data) => {
