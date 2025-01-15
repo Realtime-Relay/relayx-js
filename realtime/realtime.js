@@ -251,7 +251,7 @@ export class Realtime {
                         this.reconnecting = false;
                         this.connected = true;
 
-                        this.#subscribeToTopics();
+                        // this.#subscribeToTopics();
 
                         if(RECONNECT in this.#event_func){
                             this.#event_func[RECONNECT](this.#RECONNECTED);   
@@ -356,19 +356,27 @@ export class Realtime {
         }
 
         if(!(topic in this.#event_func)){
-            this.#event_func[topic] = func; 
-        }
+            if (![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
+                this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND].includes(topic)){
+                    if(!this.isTopicValid(topic)){
+                        throw new Error("Invalid topic, use isTopicValid($topic) to validate topic")
+                    }
 
-        if (![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
-            this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND].includes(topic)){
-                if(!this.#topicMap.includes(topic)){
-                    this.#topicMap.push(topic);
+                    this.#event_func[topic] = func;
+    
+                    if(!this.#topicMap.includes(topic)){
+                        this.#topicMap.push(topic);
+                    }
+    
+                if(this.connected){
+                    // Connected we need to create a topic in a stream
+                    await this.#startConsumer(topic);
                 }
-
-            if(this.connected){
-                // Connected we need to create a topic in a stream
-                await this.#startConsumer(topic);
             }
+
+            return true;
+        }else{
+            return false;
         }
     }
 
@@ -585,8 +593,12 @@ export class Realtime {
      */
     isTopicValid(topic){
         if(topic !== null && topic !== undefined && (typeof topic) == "string"){
-            return ![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
+            var arrayCheck = ![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
                 this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND].includes(topic);
+
+            var spaceStarCheck = !topic.includes(" ") && !topic.includes("*");
+
+            return arrayCheck && spaceStarCheck;
         }else{
             return false;
         }
