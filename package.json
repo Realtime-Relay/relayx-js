@@ -1,6 +1,6 @@
 {
   "name": "relayx-js",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "main": "realtime/realtime.js",
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
   },
   "keywords": ["realtime", "realtime-communication", "relay", "relay-x", "relay-x-js"],
   "author": "Relay",
-  "license": "MIT License",
+  "license": "Apache 2.0",
   "description": "A powerful library for integrating real-time communication into your software stack, powered by the Relay Network.",
   "dependencies": {
     "@nats-io/jetstream": "^3.0.0-35",
