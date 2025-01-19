@@ -485,6 +485,8 @@ export class Realtime {
             end = end.toISOString();
         }
 
+        console.log(`END => ${end}`)
+
         await this.#createOrGetStream();
 
         var opts = { 
@@ -501,9 +503,7 @@ export class Realtime {
 
         this.#consumerMap[topic] = consumer;
 
-        const msgs = await consumer.fetch({
-            expires: 10000
-        });
+        const msgs = await consumer.consume();
 
         var history = [];
 
@@ -515,6 +515,8 @@ export class Realtime {
                     break
                 }
             }
+
+            console.log(m.timestamp)
 
             var data = m.json();
             history.push(data.message);
