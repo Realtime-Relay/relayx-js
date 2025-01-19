@@ -1,4 +1,3 @@
-import { History } from "./history.js";
 import axios from 'axios';
 import { connect, JSONCodec, Events, DebugEvents, AckPolicy, ReplayPolicy, credsAuthenticator } from "nats";
 import { DeliverPolicy, jetstream, jetstreamManager } from "@nats-io/jetstream";
@@ -36,9 +35,6 @@ export class Realtime {
 
     // Offline messages
     #offlineMessageBuffer = [];
-
-    // History API
-    history = null;
 
     // Test Variables
     #timeout = 1000;
@@ -452,6 +448,88 @@ export class Realtime {
     }
 
     /**
+     * Starts consumer for particular topic if stream exists
+     * @param {string} topic 
+     */
+    async history(topic, start, end){
+        this.#log(start)
+        if(topic == null || topic == undefined){
+            throw new Error("$topic is null or undefined");
+        }
+
+        if(topic == ""){
+            throw new Error("$topic cannot be an empty string")
+        }
+
+        if(typeof topic !== "string"){
+            throw new Error(`Expected $topic type -> string. Instead receieved -> ${typeof topic}`);
+        }
+
+        if(start == undefined || start == null){
+            throw new Error(`$start must be provided. $start is => ${start}`)
+        }
+
+        if(!(start instanceof Date)){
+            throw new Error(`$start must be a Date object`)
+        }
+
+        if(end != undefined && end != null){
+            if(!(end instanceof Date)){
+                throw new Error(`$end must be a Date object`)
+            }
+
+            if(start > end){
+                throw new Error("$start is greater than $end, must be before $end")
+            }
+
+            end = end.toISOString();
+        }
+
+        console.log(`END => ${end}`)
+
+        await this.#createOrGetStream();
+
+        var opts = { 
+            name: topic,
+            filter_subjects: [this.#getStreamTopic(topic)],
+            replay_policy: ReplayPolicy.Instant,
+            opt_start_time: start,
+            ack_policy: AckPolicy.Explicit,
+        }
+
+        const consumer = await this.#jetstream.consumers.get(this.#getStreamName(), opts);
+        this.#log(this.#topicMap)
+        this.#log("Consumer is consuming");
+
+        this.#consumerMap[topic] = consumer;
+
+        const msgs = await consumer.consume();
+
+        var history = [];
+
+        for await (const m of msgs){
+            m.ack();
+
+            if(end != null || end != undefined){
+                if(m.timestamp > end){
+                    break
+                }
+            }
+
+            console.log(m.timestamp)
+
+            var data = m.json();
+            history.push(data.message);
+        }
+
+        var del = await consumer.delete();
+
+        this.#log("History pull done", del)
+
+        return history;
+    }
+
+    /**
      * Method resends messages when the client successfully connects to the
      * server again
      * @returns - Array of success and failure messages
@@ -510,7 +588,6 @@ export class Realtime {
             callback: (msg) => {
 
                 msg.ack();
-
                 try{
                     var data = this.#codec.decode(msg.data);
                     var room = data.room;

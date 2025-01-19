@@ -51,10 +51,18 @@ async function run(){
 
             process.exit();
         }else if(input == "history"){
-            var since = Date.now() - 1 * 60 * 60 * 1000; // 1 hour ago
+            rl.question("topic: ", async (topic) => {
+                var start = new Date();
+                var past = start.setDate(start.getDate() - 4)
+                var pastDate = new Date(past)
 
-            var history = await realtime.history.getMessagesSince("hello", since, 1, 1000);
-            console.log(history);
+                var end = new Date();
+                var past = end.setDate(end.getDate() - 2)
+                var endDate = new Date(past)
+
+                var history = await realtime.history(topic, pastDate, endDate)
+                // console.log(history)
+            })
         }else if(input == "off"){
             rl.question("topic to off(): ", async (topic) => {
                 await realtime.off(topic);
