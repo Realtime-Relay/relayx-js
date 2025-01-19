@@ -65,7 +65,33 @@ Unsubscribe from a topic:<br>
         console.log("Unable to unsubscribe from power_telemetry");
     }
     ```
+<<<<<<< Updated upstream
 4. <b>Valid Topic Check</b><br>
+=======
+4. <b>History</b><br>
+Get previously published messages between a start date and end date. Dates are in UTC.
+    ```javascript
+    var start = new Date();
+    var past = start.setDate(start.getDate() - 4) // Get start date from 4 days ago
+    var startDate = new Date(past)
+
+    var end = new Date();
+    var past = end.setDate(end.getDate() - 2) // Get end date from 2 days ago
+    var endDate = new Date(past)
+
+    var history = await realtime.history(topic, startDate, endDate)
+    ```
+    The end date is optional. Supplying only the start time will fetch all messages from the start time to now.
+    ```javascript
+    var start = new Date();
+    var past = start.setDate(start.getDate() - 4) // Get start date from 4 days ago
+    var startDate = new Date(past)
+
+    // This will get all messages from 4 days ago to now
+    var history = await realtime.history(topic, startDate)
+    ```
+5. <b>Valid Topic Check</b><br>
+>>>>>>> Stashed changes
 Utility function to check if a particular topic is valid
     ```javascript
     var isValid = realtime.isTopicValid("topic");
