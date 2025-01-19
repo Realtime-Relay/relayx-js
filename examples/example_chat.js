@@ -61,7 +61,7 @@ async function run(){
                 var endDate = new Date(past)
 
                 var history = await realtime.history(topic, pastDate, endDate)
-                console.log(history)
+                // console.log(history)
             })
         }else if(input == "off"){
             rl.question("topic to off(): ", async (topic) => {
