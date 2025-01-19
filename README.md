@@ -65,21 +65,43 @@ Unsubscribe from a topic:<br>
         console.log("Unable to unsubscribe from power_telemetry");
     }
     ```
-4. <b>Valid Topic Check</b><br>
+4. <b>History</b><br>
+Get previously published messages between a start date and end date
+    ```javascript
+    var start = new Date();
+    var past = start.setDate(start.getDate() - 4) // Get start date from 4 days ago
+    var startDate = new Date(past)
+
+    var end = new Date();
+    var past = end.setDate(end.getDate() - 2) // Get end date from 2 days ago
+    var endDate = new Date(past)
+
+    var history = await realtime.history(topic, startDate, endDate)
+    ```
+    The end date is optional. Supplying only the start time will fetch all messages from the start time to now.
+    ```javascript
+    var start = new Date();
+    var past = start.setDate(start.getDate() - 4) // Get start date from 4 days ago
+    var startDate = new Date(past)
+
+    // This will get all messages from 4 days ago to now
+    var history = await realtime.history(topic, startDate)
+    ```
+5. <b>Valid Topic Check</b><br>
 Utility function to check if a particular topic is valid
     ```javascript
     var isValid = realtime.isTopicValid("topic");
 
     console.log(`Topic Valid => ${isValid}`);
     ```
-5. <b>Sleep</b><br>
+6. <b>Sleep</b><br>
 Utility async function to delay code execution
     ```javascript
     console.log("Starting code execution...");
     await realtime.sleep(2000) // arg is in ms
     console.log("This line executed after 2 seconds");
     ```
-6. <b>Close Connection to Relay</b><br>
+7. <b>Close Connection to Relay</b><br>
 Manually disconnect from the Relay Network
     ```javascript
     // Logic here
@@ -148,9 +170,16 @@ Subscribes to a topic. This is an async function.
 Deletes reference to user defined event callback for a topic. This will stop listening to a topic. This is an async function.
      * @param {string} topic 
      * @returns {boolean} - To check if topic unsubscribe was successful
-4. isTopicValid()<br>
+4. history()<br>
+Get a list of messages published in the past. This is an async function.<br>
+A list of messages can be obtained using a start time and end time. End time is optional. If end time is not specified, all messages from the start time to now is returned.
+     * @param {string} topic 
+     * @param {Date} start
+     * @param {Date} end
+     * @returns {JSON Array} - List of messages published in the past
+5. isTopicValid()<br>
 Checks if a topic can be used to send messages to.
      * @param {string} topic - Name of event
      * @returns {boolean} - If topic is valid or not
-5. sleep()<br>
+6. sleep()<br>
 Pauses code execution for a user defined time. Time passed into the method is in milliseconds.  This is an async function.

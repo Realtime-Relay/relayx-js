@@ -370,9 +370,10 @@ test("off() test", async () => {
     new Error("Expected $topic type -> string. Instead receieved -> number"),
     "Expected error was not thrown");
 
+    // Turning off topic multiple times to check for crashes.
+    // Since it is off already, output will be false
     var status = await realtime.off("hello");
-
-    assert.strictEqual(status, true)
+    assert.strictEqual(status, false)
 
     var eventFunc = realtime.testGetEventMap();
     var topicMap = realtime.testGetTopicMap();
@@ -381,11 +382,6 @@ test("off() test", async () => {
     assert.strictEqual(!topicMap.includes("hello"), true)
     assert.strictEqual(eventFunc["hello"], undefined)
     assert.strictEqual(consumerMap["hello"], undefined)
-
-    // Turning off topic multiple times to check for crashes.
-    // Since it is off already, output will be false
-    var status = await realtime.off("hello");
-    assert.strictEqual(status, false)
 
     var status = await realtime.off("hello");
     assert.strictEqual(status, false)
@@ -457,3 +453,74 @@ test("Test isTopicValidMethod()", () => {
         assert.strictEqual(valid, true);
     });
 });
+
+test("History test", async () => {
+    await assert.rejects(async () => {
+        await realTimeEnabled.history(null);
+    },
+    new Error("$topic is null or undefined"),
+    "Expected error was not thrown");
+
+    await assert.rejects(async () => {
+        await realTimeEnabled.history(undefined);
+    },
+    new Error("$topic is null or undefined"),
+    "Expected error was not thrown");
+
+    await assert.rejects(async () => {
+        await realTimeEnabled.history("");
+    },
+    new Error("$topic cannot be an empty string"),
+    "Expected error was not thrown");
+
+    await assert.rejects(async () => {
+        await realTimeEnabled.history(1234);
+    },
+    new Error("Expected $topic type -> string. Instead receieved -> number"),
+    "Expected error was not thrown");
+
+    await assert.rejects(async () => {
+        await realTimeEnabled.history("hello", null);
+    },
+    new Error("$start must be provided. $start is => null"),
+    "Expected error was not thrown");
+
+    await assert.rejects(async () => {
+        await realTimeEnabled.history("hello", undefined);
+    },
+    new Error("$start must be provided. $start is => undefined"),
+    "Expected error was not thrown");
+
+    await assert.rejects(async () => {
+        await realTimeEnabled.history("hello", "undefined");
+    },
+    new Error("$start must be a Date object"),
+    "Expected error was not thrown");
+
+    await assert.rejects(async () => {
+        await realTimeEnabled.history("hello", 1234);
+    },
+    new Error("$start must be a Date object"),
+    "Expected error was not thrown");
+
+    await assert.rejects(async () => {
+        await realTimeEnabled.history("hello", {});
+    },
+    new Error("$start must be a Date object"),
+    "Expected error was not thrown");
+
+    await realTimeEnabled.history("hello", new Date());
+
+    await realTimeEnabled.history("hello", new Date(), new Date());
+
+    var start = new Date();
+    var past = start.setDate(start.getDate() - 4)
+    var pastDate = new Date(past)
+
+    var end = new Date();
+    var past = end.setDate(end.getDate() - 2)
+    var endDate = new Date(past)
+
+    var history = await realTimeEnabled.history("hello", pastDate, endDate)
+    assert.strictEqual(history.length > 0, true)
+})
