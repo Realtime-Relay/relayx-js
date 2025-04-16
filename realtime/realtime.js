@@ -114,7 +114,8 @@ export class Realtime {
                 "nats://0.0.0.0:4223",
                 "nats://0.0.0.0:4224",
                 "nats://0.0.0.0:4225",
-                "nats://0.0.0.0:4226"] : 
+                "nats://0.0.0.0:4226"
+                ] : 
                 [
                     "nats://api.relay-x.io:4221",
                     "nats://api.relay-x.io:4222",
@@ -185,7 +186,7 @@ export class Realtime {
                 reconnect: true,
                 reconnectTimeWait: 1000,
                 authenticator: credsAuth,
-                token: this.api_key
+                token: this.api_key,
             });
 
             this.#jsManager = await jetstreamManager(this.#natsClient);
@@ -279,6 +280,7 @@ export class Realtime {
 
             // Subscribe to topics
             this.#subscribeToTopics();
+            this.#log("Subscribed to topics");
         }
     }
 
@@ -358,7 +360,7 @@ export class Realtime {
         }
 
         if (![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
-            this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND].includes(topic)){
+            this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND, SERVER_DISCONNECT].includes(topic)){
                 if(!this.isTopicValid(topic)){
                     // We have an invalid topic, lets remove it
                     if(topic in this.#event_func){
@@ -580,12 +582,12 @@ export class Realtime {
 
         const consumer = await this.#jetstream.consumers.get(this.#getStreamName(), opts);
         this.#log(this.#topicMap)
-        this.#log("Consumer is consuming");
 
         this.#consumerMap[topic] = consumer;
 
         await consumer.consume({
             callback: (msg) => {
+                console.log("TIMESTAMP", msg.info)
 
                 msg.ack();
                 try{
@@ -609,6 +611,7 @@ export class Realtime {
                 }
             }
         });
+        this.#log("Consumer is consuming");
     }
 
     /**
@@ -652,6 +655,7 @@ export class Realtime {
             await this.#jsManager.streams.add({
                 name: streamName,
                 subjects: [...this.#getStreamTopicList(), ...this.#getPresenceTopics()],
+                num_replicas: 3
             });
 
             this.#log(`${streamName} created`);
@@ -677,9 +681,9 @@ export class Realtime {
     isTopicValid(topic){
         if(topic !== null && topic !== undefined && (typeof topic) == "string"){
             var arrayCheck = ![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
-                this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND].includes(topic);
+                this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND, SERVER_DISCONNECT].includes(topic);
 
-            var spaceStarCheck = !topic.includes(" ") && !topic.includes("*");
+            var spaceStarCheck = !topic.includes(" ") && !topic.includes("*") && !topic.includes(".");
 
             return arrayCheck && spaceStarCheck;
         }else{
@@ -862,3 +866,4 @@ export const CONNECTED = "CONNECTED";
 export const RECONNECT = "RECONNECT";
 export const MESSAGE_RESEND = "MESSAGE_RESEND";
 export const DISCONNECTED = "DISCONNECTED";
+export const SERVER_DISCONNECT = "SERVER_DISCONNECT";
