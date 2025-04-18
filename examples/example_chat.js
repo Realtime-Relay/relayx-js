@@ -8,8 +8,8 @@ const rl = readline.createInterface({
 
 async function run(){
     var realtime = new Realtime({
-        api_key: "eyJ0eXAiOiJKV1QiLCJhbGciOiJlZDI1NTE5LW5rZXkifQ.eyJhdWQiOiJOQVRTIiwibmFtZSI6IjY3ZmE0ZjVmM2U3Yjc5MjA2ZThmNWQ5YiIsInN1YiI6IlVESElCRFY2UkdIREdDSEdZWjM3QU5FUlY3STI3U0VMN0dBWlpNRUxPSjNVUFZWRVVDUjJLRExVIiwibmF0cyI6eyJkYXRhIjotMSwicGF5bG9hZCI6LTEsInN1YnMiOi0xLCJwdWIiOnsiZGVueSI6WyI-Il19LCJzdWIiOnsiZGVueSI6WyI-Il19LCJvcmdfZGF0YSI6eyJvcmdfaWQiOiI2N2Y4ZjJhZTRiMWM0ODFlZjRjMzI4NWYiLCJvcmdfbmFtZSI6IlNwYWNlWCIsInByb2plY3RfaWQiOiI2N2ZhNGY1ZjNlN2I3OTIwNmU4ZjVkOWIiLCJ2YWxpZGl0eV9rZXkiOiJiNTU3ODY0OC05OWVjLTRmMjEtYjI5Ni1kNzkyYjFlN2M4NjgifSwiaXNzdWVyX2FjY291bnQiOiJBQjM3M0dCUlpFTDRISzVHV1pCTTRTVUxBS1VIWUk1TVBPVFlTSkFKQlVVTVNNSk9PV0RIRTI1WCIsInR5cGUiOiJ1c2VyIiwidmVyc2lvbiI6Mn0sImlzcyI6IkFCMzczR0JSWkVMNEhLNUdXWkJNNFNVTEFLVUhZSTVNUE9UWVNKQUpCVVVNU01KT09XREhFMjVYIiwiaWF0IjoxNzQ0NDU3NjQxLCJqdGkiOiJPTzdVQ2ZHZlAwNFptZUVxcFY3eDdjdzNWdit2bXQ4Mi9Wd0w1SEpIN0Q4MkhQQ05MKzNXSWxVcFcvcmtlK00zRDRxenB5cnp6SSsvSVM5NWFTZ3NiQT09In0.Nb416uR9SfBXOjYtPsGyKsectrvfjQiZ-7ICQUNITBX6y_QHS-0NqaS8wLKnN8tQHEMbOou0CCPea5ztwdgIDg",
-        secret: "SUANTWZ3SXBXY3I6RC32U3T6GM2BSP7DADXZVL6JCKPP7IUWEXIRWB7Z5Q"
+        api_key: "eyJ0eXAiOiJKV1QiLCJhbGciOiJlZDI1NTE5LW5rZXkifQ.eyJhdWQiOiJOQVRTIiwibmFtZSI6IjY4MDI2NzhlZWEyMDE2OGY3MmQxZTkzMiIsInN1YiI6IlVCUVhVRlhSTzQ0MzRJV0tBSlJURlJWUEFNUzNIRFdTTlVTWElWN1pGTUNPUFpIMlU3Vk9LM0NLIiwibmF0cyI6eyJkYXRhIjotMSwicGF5bG9hZCI6LTEsInN1YnMiOi0xLCJwdWIiOnsiZGVueSI6WyI-Il19LCJzdWIiOnsiZGVueSI6WyI-Il19LCJvcmdfZGF0YSI6eyJvcmdfaWQiOiI2ODAyNGJiNTMwMmYxMjY2Y2RjODFhMDUiLCJvcmdfbmFtZSI6IlNwYWNlWCIsInZhbGlkaXR5X2tleSI6IjA4M2NhNDc1LTg2YzktNDFhMC1iYTg1LTk4MTE2NmMwNzk0MiIsInJvbGUiOiJ1c2VyIiwicHJvamVjdF9pZCI6IjY4MDI2NzhlZWEyMDE2OGY3MmQxZTkzMiJ9LCJpc3N1ZXJfYWNjb3VudCI6IkFCMzczR0JSWkVMNEhLNUdXWkJNNFNVTEFLVUhZSTVNUE9UWVNKQUpCVVVNU01KT09XREhFMjVYIiwidHlwZSI6InVzZXIiLCJ2ZXJzaW9uIjoyfSwiaXNzIjoiQUIzNzNHQlJaRUw0SEs1R1daQk00U1VMQUtVSFlJNU1QT1RZU0pBSkJVVU1TTUpPT1dESEUyNVgiLCJpYXQiOjE3NDQ5OTE3MDYsImp0aSI6ImZRUlJhbmJUMkpHL2l2bGFYMkg4QTF6YlZvRm1yZFlxMHVZNzVUOTZ5aGVLUUVFUDNDY2Fqd1hkL0hmL08wK3dTVDBlZXppTWlxaEFUaFNLTE1EWGFBPT0ifQ.Lu9QjgEZiMNYWUolWAHMx0yx4BL0pn3YT2o2zrBTbhuHtbqtLiFsnnWga_4Y5rLi4btsBodWkByXynB3KYsXDA",
+        secret: "SUANCRBG4Q2BZLIHNBQXHJLK557LFCWJBSZ2DBJRRNQELPVMF4PTT2BHOM"
     });
     await realtime.init(true, {
         max_retries: 2,
@@ -28,8 +28,8 @@ async function run(){
         console.log(`[IMPL] DISONNECT`)
     });
 
-    await realtime.on("hello", (data) => {
-        console.log("hello", data);
+    await realtime.on("power-telemetry", (data) => {
+        console.log("power-telemetry", data);
     });
 
     await realtime.on("hello1", (data) => {
@@ -57,11 +57,11 @@ async function run(){
                 var pastDate = new Date(past)
 
                 var end = new Date();
-                var past = end.setDate(end.getDate() - 2)
+                var past = end.setDate(end.getDate())
                 var endDate = new Date(past)
 
-                var history = await realtime.history(topic, pastDate, endDate)
-                // console.log(history)
+                var history = await realtime.history(topic, pastDate)
+                console.log(history)
             })
         }else if(input == "off"){
             rl.question("topic to off(): ", async (topic) => {
