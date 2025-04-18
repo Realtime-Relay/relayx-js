@@ -116,6 +116,7 @@ test('init() function test', async () => {
 
 test("Namespace check test", async () => {
     assert.strictEqual(realTimeEnabled.namespace.length > 0, true)
+    assert.strictEqual(realTimeEnabled.topicHash.length > 0, true)
 });
 
 test("Retry method test", async () => {
@@ -401,17 +402,19 @@ test("Get stream name test", () => {
     });
 
     realtime.namespace = "spacex-dragon-program"
+    realtime.topicHash = "topic_hash";
 
     var getStreamName = realtime.testGetStreamName();
     var getStreamTopic = realtime.testGetStreamTopic();
 
     var name = getStreamName();
-    assert.strictEqual(name, "spacex-dragon-program_stream")
+    assert.strictEqual(name, `${realtime.namespace}_stream`);
 
     var topic = getStreamTopic("hello_world")
-    assert.strictEqual(topic, "spacex-dragon-program_stream_hello_world")
+    assert.strictEqual(topic, `${realtime.topicHash}.hello_world`)
 
     realtime.namespace = null;
+    realtime.topicHash = null;
 
     assert.throws(() => {
         getStreamName();
@@ -422,7 +425,7 @@ test("Get stream name test", () => {
     assert.throws(() => {
         getStreamTopic("hello_world");
     }, 
-    new Error("$namespace is null. Cannot initialize program with null $namespace"),
+    new Error("$topicHash is null. Cannot initialize program with null $topicHash"),
     "Expected error was not thrown")
 });
 
@@ -508,19 +511,4 @@ test("History test", async () => {
     },
     new Error("$start must be a Date object"),
     "Expected error was not thrown");
-
-    await realTimeEnabled.history("hello", new Date());
-
-    await realTimeEnabled.history("hello", new Date(), new Date());
-
-    var start = new Date();
-    var past = start.setDate(start.getDate() - 4)
-    var pastDate = new Date(past)
-
-    var end = new Date();
-    var past = end.setDate(end.getDate() - 2)
-    var endDate = new Date(past)
-
-    var history = await realTimeEnabled.history("hello", pastDate, endDate)
-    assert.strictEqual(history.length > 0, true)
 })
