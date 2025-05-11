@@ -8,10 +8,10 @@ const rl = readline.createInterface({
 
 async function run(){
     var realtime = new Realtime({
-        api_key: "eyJ0eXAiOiJKV1QiLCJhbGciOiJlZDI1NTE5LW5rZXkifQ.eyJhdWQiOiJOQVRTIiwibmFtZSI6IjY4MDI2NzhlZWEyMDE2OGY3MmQxZTkzMiIsInN1YiI6IlVCUVhVRlhSTzQ0MzRJV0tBSlJURlJWUEFNUzNIRFdTTlVTWElWN1pGTUNPUFpIMlU3Vk9LM0NLIiwibmF0cyI6eyJkYXRhIjotMSwicGF5bG9hZCI6LTEsInN1YnMiOi0xLCJwdWIiOnsiZGVueSI6WyI-Il19LCJzdWIiOnsiZGVueSI6WyI-Il19LCJvcmdfZGF0YSI6eyJvcmdfaWQiOiI2ODAyNGJiNTMwMmYxMjY2Y2RjODFhMDUiLCJvcmdfbmFtZSI6IlNwYWNlWCIsInZhbGlkaXR5X2tleSI6IjA4M2NhNDc1LTg2YzktNDFhMC1iYTg1LTk4MTE2NmMwNzk0MiIsInJvbGUiOiJ1c2VyIiwicHJvamVjdF9pZCI6IjY4MDI2NzhlZWEyMDE2OGY3MmQxZTkzMiJ9LCJpc3N1ZXJfYWNjb3VudCI6IkFCMzczR0JSWkVMNEhLNUdXWkJNNFNVTEFLVUhZSTVNUE9UWVNKQUpCVVVNU01KT09XREhFMjVYIiwidHlwZSI6InVzZXIiLCJ2ZXJzaW9uIjoyfSwiaXNzIjoiQUIzNzNHQlJaRUw0SEs1R1daQk00U1VMQUtVSFlJNU1QT1RZU0pBSkJVVU1TTUpPT1dESEUyNVgiLCJpYXQiOjE3NDQ5OTE3MDYsImp0aSI6ImZRUlJhbmJUMkpHL2l2bGFYMkg4QTF6YlZvRm1yZFlxMHVZNzVUOTZ5aGVLUUVFUDNDY2Fqd1hkL0hmL08wK3dTVDBlZXppTWlxaEFUaFNLTE1EWGFBPT0ifQ.Lu9QjgEZiMNYWUolWAHMx0yx4BL0pn3YT2o2zrBTbhuHtbqtLiFsnnWga_4Y5rLi4btsBodWkByXynB3KYsXDA",
-        secret: "SUANCRBG4Q2BZLIHNBQXHJLK557LFCWJBSZ2DBJRRNQELPVMF4PTT2BHOM"
+        api_key: process.env.user_key,
+        secret: process.env.secret
     });
-    await realtime.init(true, {
+    await realtime.init(false, {
         max_retries: 2,
         debug: true
     });
@@ -32,8 +32,8 @@ async function run(){
         console.log("power-telemetry", data);
     });
 
-    await realtime.on("hello1", (data) => {
-        console.log("hello1", data);
+    await realtime.on("test232", (data) => {
+        console.log("test232", data);
     });
 
     realtime.on(MESSAGE_RESEND, (data) => {
@@ -83,9 +83,7 @@ async function run(){
             })
         }else{
             rl.question("topic: ", async (topic) => {
-                var output = await realtime.publish(topic, {
-                    "data": input
-                });
+                var output = await realtime.publish(topic, input);
             })
         }
     });
