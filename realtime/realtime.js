@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { connect, JSONCodec, Events, DebugEvents, AckPolicy, ReplayPolicy, credsAuthenticator } from "nats";
-import { DeliverPolicy, jetstream, jetstreamManager } from "@nats-io/jetstream";
-import { readFileSync } from "fs"
+import { DeliverPolicy, jetstream } from "@nats-io/jetstream";
+import { encode, decode } from "@msgpack/msgpack";
+import { v4 as uuidv4 } from 'uuid';
 
 export class Realtime {
 
@@ -10,8 +11,6 @@ export class Realtime {
     #natsClient = null; 
     #codec = JSONCodec();
     #jetstream = null;
-    #jsManager = null;
-    #streamTracker = []; 
     #consumerMap = {};
 
     #event_func = {}; 
@@ -36,9 +35,6 @@ export class Realtime {
     // Offline messages
     #offlineMessageBuffer = [];
 
-    // Test Variables
-    #timeout = 1000;
-
     #maxPublishRetries = 5; 
 
     constructor(config){
@@ -62,6 +58,7 @@ export class Realtime {
         }
 
         this.namespace = null;
+        this.topicHash = null;
     }
 
     /*
@@ -161,8 +158,10 @@ export class Realtime {
 
         if(data["status"] == "NAMESPACE_RETRIEVE_SUCCESS"){
             this.namespace = data["data"]["namespace"]
+            this.topicHash = data["data"]["hash"]
         }else{
             this.namespace = null;
+            this.topicHash = null;
             return
         }
     }
@@ -189,7 +188,6 @@ export class Realtime {
                 token: this.api_key,
             });
 
-            this.#jsManager = await jetstreamManager(this.#natsClient);
             this.#jetstream = await jetstream(this.#natsClient);
 
             await this.#getNameSpace()
@@ -225,7 +223,6 @@ export class Realtime {
                         this.#log(`client disconnected - ${s.data}`);
 
                         this.connected = false;
-                        this.#streamTracker = []; 
                         this.#consumerMap = {};
 
                         if (DISCONNECTED in this.#event_func){
@@ -247,8 +244,6 @@ export class Realtime {
 
                         this.reconnecting = false;
                         this.connected = true;
-
-                        // this.#subscribeToTopics();
 
                         if(RECONNECT in this.#event_func){
                             this.#event_func[RECONNECT](this.#RECONNECTED);   
@@ -418,13 +413,12 @@ export class Realtime {
             "start": Date.now()
         }
 
-        var encodedMessage = this.#codec.encode(message)
+        this.#log("Encoding message via msg pack...")
+        var encodedMessage = encode(message);
 
         if(this.connected){
             if(!this.#topicMap.includes(topic)){
                 this.#topicMap.push(topic);
-
-                await this.#createOrGetStream();
             }else{
                 this.#log(`${topic} exists locally, moving on...`)
             }
@@ -487,12 +481,8 @@ export class Realtime {
             end = end.toISOString();
         }
 
-        console.log(`END => ${end}`)
-
-        await this.#createOrGetStream();
-
         var opts = { 
-            name: topic,
+            name: `${topic}_${uuidv4()}_history`,
             filter_subjects: [this.#getStreamTopic(topic)],
             replay_policy: ReplayPolicy.Instant,
             opt_start_time: start,
@@ -503,30 +493,33 @@ export class Realtime {
         this.#log(this.#topicMap)
         this.#log("Consumer is consuming");
 
-        this.#consumerMap[topic] = consumer;
-
-        const msgs = await consumer.consume();
-
         var history = [];
 
-        for await (const m of msgs){
-            m.ack();
+        while(true){
+            var msg = await consumer.next({
+                expires: 1000
+            });
+
+            if(msg == null){
+                break;
+            }
 
             if(end != null || end != undefined){
-                if(m.timestamp > end){
+                if(msg.timestamp > end){
                     break
                 }
             }
 
-            console.log(m.timestamp)
-
-            var data = m.json();
+            this.#log("Decoding msgpack message...")
+            var data = decode(msg.data);
+            this.#log(data);
+            
             history.push(data.message);
         }
 
         var del = await consumer.delete();
 
-        this.#log("History pull done", del)
+        this.#log("History pull done: " + del);
 
         return history;
     }
@@ -569,10 +562,8 @@ export class Realtime {
      * @param {string} topic 
      */
     async #startConsumer(topic){
-        await this.#createOrGetStream();
-
         var opts = { 
-            name: topic,
+            name: `${topic}_${uuidv4()}`,
             filter_subjects: [this.#getStreamTopic(topic), this.#getStreamTopic(topic) + "_presence"],
             replay_policy: ReplayPolicy.Instant,
             opt_start_time: new Date(),
@@ -587,11 +578,10 @@ export class Realtime {
 
         await consumer.consume({
             callback: (msg) => {
-                console.log("TIMESTAMP", msg.info)
-
-                msg.ack();
                 try{
-                    var data = this.#codec.decode(msg.data);
+                    this.#log("Decoding msgpack message...")
+                    var data = decode(msg.data);
+
                     var room = data.room;
 
                     this.#log(data);
@@ -605,9 +595,11 @@ export class Realtime {
                             "data": data.message
                         });
                     }
+
+                    msg.ack();
                 }catch(err){
                     this.#log("Consumer err " + err);
-                    msg.nack();
+                    msg.nack(5000);
                 }
             }
         });
@@ -632,40 +624,6 @@ export class Realtime {
         delete this.#consumerMap[topic];
 
         return del;
-    }
-
-    /**
-     * Gets stream if it exists or creates one
-     * @param {string} streamName 
-     */
-    async #createOrGetStream(){
-        const streamName = this.#getStreamName();
-        var stream = null;
-        
-        try{
-            stream = await this.#jsManager.streams.info(streamName);
-        }catch(err){
-            stream = null;
-        }
-
-        this.#log(`STREAM => ${stream}`)
-
-        if (stream == null){
-            // Stream does not exist, create one
-            await this.#jsManager.streams.add({
-                name: streamName,
-                subjects: [...this.#getStreamTopicList(), ...this.#getPresenceTopics()],
-                num_replicas: 3
-            });
-
-            this.#log(`${streamName} created`);
-        }else{
-            var subs = [...stream.config.subjects, ...this.#getStreamTopicList(), ...this.#getPresenceTopics()];
-            stream.config.subjects = [...new Set(subs)];
-            await this.#jsManager.streams.update(streamName, stream.config);
-
-            this.#log(`${streamName} exists, updating and moving on...`);
-        }
     }
 
     // Utility functions
@@ -701,32 +659,12 @@ export class Realtime {
     }
 
     #getStreamTopic(topic){
-        if(this.namespace != null){
-            return this.namespace + "_stream_" + topic;
+        if(this.topicHash != null){
+            return this.topicHash + "." + topic;
         }else{
             this.close();
-            throw new Error("$namespace is null. Cannot initialize program with null $namespace")
+            throw new Error("$topicHash is null. Cannot initialize program with null $topicHash")
         }
-    }
-
-    #getStreamTopicList(){
-        var topics = [];
-
-        this.#topicMap.forEach((topic) => {
-            topics.push(this.#getStreamTopic(topic))
-        })
-
-        return topics
-    }
-
-    #getPresenceTopics(){
-        var presence = [];
-
-        this.#topicMap.forEach((topic) => {
-            presence.push(this.#getStreamTopic(topic) + "_presence")
-        })
-
-        return presence
     }
 
     sleep(ms) {
