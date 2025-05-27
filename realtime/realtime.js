@@ -35,6 +35,11 @@ export class Realtime {
     // Offline messages
     #offlineMessageBuffer = [];
 
+    // Latency
+    #latency = [];
+    #latencyPush = null;
+    #isSendingLatency = false;
+
     #maxPublishRetries = 5; 
 
     constructor(config){
@@ -369,10 +374,10 @@ export class Realtime {
                     this.#topicMap.push(topic);
                 }
 
-            if(this.connected){
-                // Connected we need to create a topic in a stream
-                await this.#startConsumer(topic);
-            }
+                if(this.connected){
+                    // Connected we need to create a topic in a stream
+                    await this.#startConsumer(topic);
+                }
         }
 
         return true;
@@ -562,6 +567,8 @@ export class Realtime {
      * @param {string} topic 
      */
     async #startConsumer(topic){
+        this.#log(`Starting consumer for topic: ${topic}_${uuidv4()}`)
+
         var opts = { 
             name: `${topic}_${uuidv4()}`,
             filter_subjects: [this.#getStreamTopic(topic), this.#getStreamTopic(topic) + "_presence"],
@@ -577,16 +584,15 @@ export class Realtime {
         this.#consumerMap[topic] = consumer;
 
         await consumer.consume({
-            callback: (msg) => {
+            callback: async (msg) => {
                 try{
+                    const now = Date.now();
                     this.#log("Decoding msgpack message...")
                     var data = decode(msg.data);
 
                     var room = data.room;
 
                     this.#log(data);
-                    const latency = Date.now() - data.start
-                    this.#log(`Latency => ${latency}`)
 
                     // Push topic message to main thread
                     if (room in this.#event_func && data.client_id != this.#getClientId()){
@@ -597,6 +603,8 @@ export class Realtime {
                     }
 
                     msg.ack();
+
+                    await this.#logLatency(now, data);
                 }catch(err){
                     this.#log("Consumer err " + err);
                     msg.nack(5000);
@@ -626,9 +634,93 @@ export class Realtime {
         return del;
     }
 
+    async #logLatency(now, data){
+        if(data.client_id == this.#getClientId()){
+            this.#log("Skipping latency log for own message");
+            return;
+        }
+
+        if(this.#latency.length >= 100){
+            this.#log("Latency array is full, skipping log");
+            return;
+        }
+
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+        this.#log(`Timezone: ${timeZone}`);
+
+        const latency = now - data.start
+        this.#log(`Latency => ${latency}`)
+
+        this.#latency.push({
+            latency: latency,
+            timestamp: now
+        });
+
+        if(this.#latencyPush == null){
+            this.#latencyPush = setTimeout(async () => {
+                this.#log("setTimeout called");
+
+                if(this.#latency.length > 0){
+                    this.#log("Push from setTimeout")
+                    await this.#pushLatencyData({
+                        timezone: timeZone,
+                        history: this.#latency,
+                    });
+                }else{
+                    this.#log("No latency data to push");
+                }
+                    
+            }, 30000);
+        }
+
+        if(this.#latency.length == 100 && !this.#isSendingLatency){
+            this.#log("Push from Length Check: " + this.#latency.length);
+            await this.#pushLatencyData({
+                        timezone: timeZone,
+                        history: this.#latency,
+                    });
+        }
+    }
+
     // Utility functions
     #getClientId(){
         return this.#natsClient?.info?.client_id
+    }
+
+    async #pushLatencyData(data){
+        this.#isSendingLatency = true;
+
+        try{
+            var res = await this.#natsClient.request("accounts.user.log_latency", 
+            JSONCodec().encode({
+                    api_key: this.api_key,
+                    payload: data
+                }),
+                {
+                    timeout: 5000
+                }
+            )
+
+            var data = res.json()
+
+            this.#log(data)
+            this.#resetLatencyTracker();
+        }catch(err){
+            this.#log("Error getting pushing latency data")
+            this.#log(err);
+        }
+
+        this.#isSendingLatency = false;
+    }
+
+    #resetLatencyTracker(){
+        this.#latency = [];
+
+        if(this.#latencyPush != null){
+            clearTimeout(this.#latencyPush);
+            this.#latencyPush = null;
+        }
     }
 
     /**
@@ -716,7 +808,6 @@ export class Realtime {
 
             output = await func(...args); 
             success = output.success; 
-            // this.#log(output);
 
             methodDataOutput = output.output; 
 
