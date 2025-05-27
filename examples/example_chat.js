@@ -8,10 +8,10 @@ const rl = readline.createInterface({
 
 async function run(){
     var realtime = new Realtime({
-        api_key: process.env.user_key,
-        secret: process.env.secret
+        api_key: process.env.AUTH_JWT,
+        secret: process.env.AUTH_SECRET
     });
-    await realtime.init(false, {
+    await realtime.init(true, {
         max_retries: 2,
         debug: true
     });
