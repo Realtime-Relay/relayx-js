@@ -177,8 +177,8 @@ export class Realtime {
             this.#natsClient = await connect({ 
                 servers: this.SEVER_URL,
                 noEcho: true,
-                maxReconnectAttempts: 1200,
                 reconnect: true,
+                maxReconnectAttempts: 1200,
                 reconnectTimeWait: 1000,
                 authenticator: credsAuth,
                 token: this.api_key,
@@ -208,6 +208,8 @@ export class Realtime {
 
             this.#natsClient.closed().then(() => {
                 this.#log("the connection closed!");
+
+                this.#offlineMessageBuffer.length = 0;
             });
             
             (async () => {
@@ -282,6 +284,8 @@ export class Realtime {
         if(this.#natsClient !== null){
             this.reconnected = false;
             this.disconnected = true;
+            
+            this.#offlineMessageBuffer.length = 0;
 
             this.#natsClient.close();
         }else{
