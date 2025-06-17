@@ -113,27 +113,18 @@ export class Realtime {
             this.#baseUrl = staging ? [
                 "nats://0.0.0.0:4221",
                 "nats://0.0.0.0:4222",
-                "nats://0.0.0.0:4223",
-                "nats://0.0.0.0:4224",
-                "nats://0.0.0.0:4225",
-                "nats://0.0.0.0:4226"
+                "nats://0.0.0.0:4223"
                 ] : 
                 [
-                    "nats://api.relay-x.io:4221",
-                    "nats://api.relay-x.io:4222",
-                    "nats://api.relay-x.io:4223",
-                    "nats://api.relay-x.io:4224",
-                    "nats://api.relay-x.io:4225",
-                    "nats://api.relay-x.io:4226",
+                    "tls://api.relay-x.io:4221",
+                    "tls://api.relay-x.io:4222",
+                    "tls://api.relay-x.io:4223"
                 ];
         }else{
             this.#baseUrl = [
-                "nats://api.relay-x.io:4221",
-                "nats://api.relay-x.io:4222",
-                "nats://api.relay-x.io:4223",
-                "nats://api.relay-x.io:4224",
-                "nats://api.relay-x.io:4225",
-                "nats://api.relay-x.io:4226",
+                "tls://api.relay-x.io:4221",
+                "tls://api.relay-x.io:4222",
+                "tls://api.relay-x.io:4223"
             ];
         }
 
