@@ -113,27 +113,18 @@ export class Realtime {
             this.#baseUrl = staging ? [
                 "nats://0.0.0.0:4221",
                 "nats://0.0.0.0:4222",
-                "nats://0.0.0.0:4223",
-                "nats://0.0.0.0:4224",
-                "nats://0.0.0.0:4225",
-                "nats://0.0.0.0:4226"
+                "nats://0.0.0.0:4223"
                 ] : 
                 [
-                    "nats://api.relay-x.io:4221",
-                    "nats://api.relay-x.io:4222",
-                    "nats://api.relay-x.io:4223",
-                    "nats://api.relay-x.io:4224",
-                    "nats://api.relay-x.io:4225",
-                    "nats://api.relay-x.io:4226",
+                    "tls://api.relay-x.io:4221",
+                    "tls://api.relay-x.io:4222",
+                    "tls://api.relay-x.io:4223"
                 ];
         }else{
             this.#baseUrl = [
-                "nats://api.relay-x.io:4221",
-                "nats://api.relay-x.io:4222",
-                "nats://api.relay-x.io:4223",
-                "nats://api.relay-x.io:4224",
-                "nats://api.relay-x.io:4225",
-                "nats://api.relay-x.io:4226",
+                "tls://api.relay-x.io:4221",
+                "tls://api.relay-x.io:4222",
+                "tls://api.relay-x.io:4223"
             ];
         }
 
@@ -186,8 +177,8 @@ export class Realtime {
             this.#natsClient = await connect({ 
                 servers: this.SEVER_URL,
                 noEcho: true,
-                maxReconnectAttempts: 1200,
                 reconnect: true,
+                maxReconnectAttempts: 1200,
                 reconnectTimeWait: 1000,
                 authenticator: credsAuth,
                 token: this.api_key,
@@ -217,6 +208,8 @@ export class Realtime {
 
             this.#natsClient.closed().then(() => {
                 this.#log("the connection closed!");
+
+                this.#offlineMessageBuffer.length = 0;
             });
             
             (async () => {
@@ -291,6 +284,8 @@ export class Realtime {
         if(this.#natsClient !== null){
             this.reconnected = false;
             this.disconnected = true;
+            
+            this.#offlineMessageBuffer.length = 0;
 
             this.#natsClient.close();
         }else{
