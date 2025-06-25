@@ -158,7 +158,9 @@ This event is fired when the library resends the messages upon reconnection to t
 
 ## API Reference
 1. init()<br>
-Initializes library with configuration options
+Initializes library with configuration options.
+    * debug (boolean): enables library level logging
+    * browser_mode (boolean): Allows websocket connections to be made from a browser. Default is TCP
 2. connect()<br>
 Connects the library to the Relay Network. This is an async function.
 3. close()<br>
