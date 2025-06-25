@@ -22,7 +22,9 @@ Install the relay library by running the command below in your terminal<br>
         api_key: process.env.api_key,
         secret: process.env.secret,
     });
-    realtime.init();
+    realtime.init({
+        browser_mode: true // Enable when using in webapps
+    });
 
     // Initialization of topic listeners go here... (look at examples/example_chat.js for full implementation)
 
