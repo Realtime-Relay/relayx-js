@@ -22,7 +22,9 @@ Install the relay library by running the command below in your terminal<br>
         api_key: process.env.api_key,
         secret: process.env.secret,
     });
-    realtime.init();
+    realtime.init({
+        browser_mode: true // Enable when using in webapps
+    });
 
     // Initialization of topic listeners go here... (look at examples/example_chat.js for full implementation)
 
@@ -156,7 +158,9 @@ This event is fired when the library resends the messages upon reconnection to t
 
 ## API Reference
 1. init()<br>
-Initializes library with configuration options
+Initializes library with configuration options.
+    * debug (boolean): enables library level logging
+    * browser_mode (boolean): Allows websocket connections to be made from a browser. Default is TCP
 2. connect()<br>
 Connects the library to the Relay Network. This is an async function.
 3. close()<br>
