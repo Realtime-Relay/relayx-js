@@ -108,6 +108,14 @@ export class Realtime {
         }
 
         this.staging = staging; 
+        this.opts = opts;
+
+        var browserMode = this.opts["browser_mode"];
+        var protocol = "tls"
+
+        if(browserMode != null && browserMode != undefined && (typeof browserMode == "boolean")){
+            protocol = browserMode ? "wss" : "tls"
+        }
 
         if (staging !== undefined || staging !== null){
             this.#baseUrl = staging ? [
@@ -116,22 +124,20 @@ export class Realtime {
                 "nats://0.0.0.0:4223"
                 ] : 
                 [
-                    "tls://api.relay-x.io:4221",
-                    "tls://api.relay-x.io:4222",
-                    "tls://api.relay-x.io:4223"
+                    `${protocol}://api.relay-x.io:4221`,
+                    `${protocol}://api.relay-x.io:4222`,
+                    `${protocol}://api.relay-x.io:4223`
                 ];
         }else{
             this.#baseUrl = [
-                "tls://api.relay-x.io:4221",
-                "tls://api.relay-x.io:4222",
-                "tls://api.relay-x.io:4223"
+                `${protocol}://api.relay-x.io:4221`,
+                `${protocol}://api.relay-x.io:4222`,
+                `${protocol}://api.relay-x.io:4223`
             ];
         }
 
         this.#log(this.#baseUrl);
         this.#log(opts);
-
-        this.opts = opts;
     }
 
     /**
@@ -400,6 +406,10 @@ export class Realtime {
 
         if(!this.isTopicValid(topic)){
             throw new Error("Invalid topic, use isTopicValid($topic) to validate topic")
+        }
+
+        if(!this.#isMessageValid(data)){
+            throw new Error("$message must be JSON, string or number")
         }
 
         var start = Date.now()
@@ -733,6 +743,35 @@ export class Realtime {
             return arrayCheck && spaceStarCheck;
         }else{
             return false;
+        }
+    }
+
+    #isMessageValid(message){
+        if(message == null || message == undefined){
+            throw new Error("$message cannot be null / undefined")
+        }
+
+        if(typeof message == "string"){
+            return true;
+        }
+
+        if(typeof message == "number"){
+            return true;
+        }
+
+        if(this.#isJSON(message)){
+            return true;
+        }
+
+        return false;
+    }
+
+    #isJSON(data){
+        try{
+            JSON.stringify(data?.toString())
+            return true;
+        }catch(err){
+            return false
         }
     }
 
