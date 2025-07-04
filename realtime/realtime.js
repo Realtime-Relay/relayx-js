@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { connect, JSONCodec, Events, DebugEvents, AckPolicy, ReplayPolicy, credsAuthenticator } from "nats";
 import { DeliverPolicy, jetstream } from "@nats-io/jetstream";
 import { encode, decode } from "@msgpack/msgpack";
@@ -110,13 +109,6 @@ export class Realtime {
         this.staging = staging; 
         this.opts = opts;
 
-        var browserMode = this.opts["browser_mode"];
-        var protocol = "tls"
-
-        if(browserMode != null && browserMode != undefined && (typeof browserMode == "boolean")){
-            protocol = browserMode ? "wss" : "tls"
-        }
-
         if (staging !== undefined || staging !== null){
             this.#baseUrl = staging ? [
                 "nats://0.0.0.0:4221",
@@ -124,15 +116,15 @@ export class Realtime {
                 "nats://0.0.0.0:4223"
                 ] : 
                 [
-                    `${protocol}://api.relay-x.io:4221`,
-                    `${protocol}://api.relay-x.io:4222`,
-                    `${protocol}://api.relay-x.io:4223`
+                    `tls://api.relay-x.io:4221`,
+                    `tls://api.relay-x.io:4222`,
+                    `tls://api.relay-x.io:4223`
                 ];
         }else{
             this.#baseUrl = [
-                `${protocol}://api.relay-x.io:4221`,
-                `${protocol}://api.relay-x.io:4222`,
-                `${protocol}://api.relay-x.io:4223`
+                `tls://api.relay-x.io:4221`,
+                `tls://api.relay-x.io:4222`,
+                `tls://api.relay-x.io:4223`
             ];
         }
 
@@ -216,6 +208,12 @@ export class Realtime {
                 this.#log("the connection closed!");
 
                 this.#offlineMessageBuffer.length = 0;
+
+                if (DISCONNECTED in this.#event_func){
+                    if (this.#event_func[DISCONNECTED] !== null || this.#event_func[DISCONNECTED] !== undefined){
+                        this.#event_func[DISCONNECTED]()
+                    }
+                }
             });
             
             (async () => {
