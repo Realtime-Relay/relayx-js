@@ -1,6 +1,6 @@
 {
   "name": "relayx-js",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "main": "realtime/realtime.js",
   "type": "module",
   "scripts": {
@@ -17,12 +17,11 @@
   "license": "Apache 2.0",
   "description": "A powerful library for integrating real-time communication into your software stack, powered by the Relay Network.",
   "dependencies": {
-    "@msgpack/msgpack": "^3.1.1",
-    "@nats-io/jetstream": "^3.0.0-35",
-    "axios": "^1.8.4",
-    "jest": "^29.7.0",
-    "nats": "^2.28.2",
-    "uuid": "^11.1.0"
+    "@msgpack/msgpack": "3.1.1",
+    "@nats-io/jetstream": "3.0.0-35",
+    "jest": "29.7.0",
+    "nats": "2.28.2",
+    "uuid": "11.1.0"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",
