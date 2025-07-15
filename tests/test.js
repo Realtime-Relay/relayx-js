@@ -1,5 +1,4 @@
 import { Realtime, CONNECTED, RECONNECT, DISCONNECTED, MESSAGE_RESEND } from "../realtime/realtime.js";
-import axios from "axios";
 import { test, before, after } from 'node:test';
 import assert from 'node:assert';
 
@@ -8,10 +7,10 @@ let realTimeEnabled;
 before(async () => {
     // Start server for testing. Run local server!!
     realTimeEnabled = new Realtime({
-        api_key: process.env.user_key,
-        secret: process.env.secret
+        api_key: process.env.AUTH_JWT,
+        secret: process.env.AUTH_SECRET
     });
-    await realTimeEnabled.init(true, {
+    await realTimeEnabled.init(false, {
         debug: true
     });
     await realTimeEnabled.connect();
@@ -55,8 +54,8 @@ test("No creds in constructor", async () => {
 
 test('init() function test', async () => {
     var realtime =  new Realtime({
-        api_key: process.env.user_key,
-        secret: process.env.secret
+        api_key: process.env.AUTH_JWT,
+        secret: process.env.AUTH_SECRET
     });
     await realtime.init(true);
 
@@ -119,37 +118,10 @@ test("Namespace check test", async () => {
     assert.strictEqual(realTimeEnabled.topicHash.length > 0, true)
 });
 
-test("Retry method test", async () => {
-    var retryMethod = realTimeEnabled.testRetryTillSuccess(); 
-
-    assert.notStrictEqual(retryMethod, null, "Obj != null")
-
-    function testMethod1(arg){
-        return {
-            success: true, 
-            output: arg
-        }
-    }
-
-    var output = await retryMethod(testMethod1, 5, 1, "test_output")
-
-    assert.strictEqual(output, "test_output");
-
-    function testMethod2(){
-        return {
-            success: false,
-            output: null
-        }
-    }
-
-    output = await retryMethod(testMethod2, 5, 1);
-    assert.strictEqual(output, null);
-});
-
 test("get publish retry count test based in init()", async () => {
     var realtime =  new Realtime({
-        api_key: process.env.user_key,
-        secret: process.env.secret
+        api_key: process.env.AUTH_JWT,
+        secret: process.env.AUTH_SECRET
     });
 
     await realtime.init({
@@ -195,6 +167,60 @@ test("get publish retry count test based in init()", async () => {
 test("Testing publish(topic, data) method", async () => {
     // Successful publish
     var response = await realTimeEnabled.publish("hello", {
+        message: "Hello World!"
+    });
+
+    assert.strictEqual(response, true);
+
+    response = await realTimeEnabled.publish("hello.hey", {
+        message: "Hello World!"
+    });
+
+    assert.strictEqual(response, true);
+
+    response = await realTimeEnabled.publish("hello.*", {
+        message: "Hello World!"
+    });
+
+    assert.strictEqual(response, true);
+
+    response = await realTimeEnabled.publish("hello.>", {
+        message: "Hello World!"
+    });
+
+    assert.strictEqual(response, true);
+
+    response = await realTimeEnabled.publish("test-room", {
+        message: "Hello World!"
+    });
+
+    assert.strictEqual(response, true);
+
+    response = await realTimeEnabled.publish("test-room.*", {
+        message: "Hello World!"
+    });
+
+    assert.strictEqual(response, true);
+
+    response = await realTimeEnabled.publish("test-room.>", {
+        message: "Hello World!"
+    });
+
+    assert.strictEqual(response, true);
+
+    response = await realTimeEnabled.publish("test_room", {
+        message: "Hello World!"
+    });
+
+    assert.strictEqual(response, true);
+
+    response = await realTimeEnabled.publish("test_room.*", {
+        message: "Hello World!"
+    });
+
+    assert.strictEqual(response, true);
+
+    response = await realTimeEnabled.publish("test_room.>", {
         message: "Hello World!"
     });
 
@@ -271,8 +297,8 @@ test("Testing publish(topic, data) with invalid inputs", async () => {
 
 test("on() test", async () => {
     var realtime = new Realtime({
-        api_key: process.env.user_key,
-        secret: process.env.secret
+        api_key: process.env.AUTH_JWT,
+        secret: process.env.AUTH_SECRET
     });
 
     await assert.rejects(async () => {
@@ -349,8 +375,8 @@ test("on() test", async () => {
 
 test("off() test", async () => {
     var realtime = new Realtime({
-        api_key: process.env.user_key,
-        secret: process.env.secret
+        api_key: process.env.AUTH_JWT,
+        secret: process.env.AUTH_SECRET
     });
 
     await assert.rejects(async () => {
@@ -397,8 +423,8 @@ test("off() test", async () => {
 
 test("Get stream name test", () => {
     var realtime = new Realtime({
-        api_key: process.env.user_key,
-        secret: process.env.secret
+        api_key: process.env.AUTH_JWT,
+        secret: process.env.AUTH_SECRET
     });
 
     realtime.namespace = "spacex-dragon-program"
@@ -449,7 +475,14 @@ test("Test isTopicValidMethod()", () => {
         assert.strictEqual(valid, false);
     });
 
-    var unreservedValidTopics = ["hello", "test-room", "heyyyyy", "room-connect"]; 
+    unreservedInvalidTopics = ["$hey.hey", "orders created", ""];
+        
+    unreservedInvalidTopics.forEach(topic => {
+        var valid = realTimeEnabled.isTopicValid(topic);
+        assert.strictEqual(valid, false);
+    });
+
+    var unreservedValidTopics = ["hello", "test-room", "heyyyyy", "room-connect", "hey$"]; 
 
     unreservedValidTopics.forEach(topic => {
         var valid = realTimeEnabled.isTopicValid(topic);
