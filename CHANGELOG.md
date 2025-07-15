@@ -1,3 +1,6 @@
+V1.0.16
+- URL Fix
+
 V1.0.15
 - Wildcard topic pub / sub
 - Message replay on reconnect
