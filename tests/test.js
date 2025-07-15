@@ -475,14 +475,76 @@ test("Test isTopicValidMethod()", () => {
         assert.strictEqual(valid, false);
     });
 
-    unreservedInvalidTopics = ["$hey.hey", "orders created", ""];
+    unreservedInvalidTopics = [
+        '$internal',          // starts with $
+        'hello world',        // space
+        'topic/',             // slash
+        'name?',              // ?
+        'foo#bar',            // #
+        'bar.baz!',           // !
+        ' space',             // leading space
+        'tab\tchar',          // tab
+        'line\nbreak',        // newline
+        'comma ,',            // space + comma
+        '',                   // empty string
+        'bad|pipe',           // |
+        'semi;colon',         // ;
+        'colon:here',         // :
+        "quote's",            // '
+        '"doublequote"',      // "
+        'brackets[]',         // []
+        'brace{}',            // {}
+        'paren()',            // ()
+        'plus+sign',          // +
+        'eq=val',             // =
+        'gt>lt<',             // < mixed with >
+        'percent%',           // %
+        'caret^',             // ^
+        'ampersand&',         // &
+        'back\\slash',        // backslash
+        '中文字符',            // non‑ASCII
+        '👍emoji',            // emoji
+        'foo\rbar',           // carriage return
+        'end '                // trailing space
+    ];
         
     unreservedInvalidTopics.forEach(topic => {
         var valid = realTimeEnabled.isTopicValid(topic);
         assert.strictEqual(valid, false);
     });
 
-    var unreservedValidTopics = ["hello", "test-room", "heyyyyy", "room-connect", "hey$"]; 
+    var unreservedValidTopics = [
+        'Orders',
+        'customer_123',
+        'foo-bar',
+        'a,b,c',
+        '*',
+        'foo>*',
+        'hello$world',
+        'topic.123',
+        'ABC_def-ghi',
+        'data_stream_2025',
+        'NODE*',
+        'pubsub>events',
+        'log,metric,error',
+        'X123_Y456',
+        'multi.step.topic',
+        'batch-process',
+        'sensor1_data',
+        'finance$Q2',
+        'alpha,beta,gamma',
+        'Z9_Y8-X7',
+        'config>*',
+        'route-map',
+        'STATS_2025-07',
+        'msg_queue*',
+        'update>patch',
+        'pipeline_v2',
+        'FOO$BAR$BAZ',
+        'user.profile',
+        'id_001-xyz',
+        'event_queue>'
+    ]; 
 
     unreservedValidTopics.forEach(topic => {
         var valid = realTimeEnabled.isTopicValid(topic);
