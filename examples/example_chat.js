@@ -11,7 +11,7 @@ async function run(){
         api_key: process.env.AUTH_JWT,
         secret: process.env.AUTH_SECRET
     });
-    await realtime.init(true, {
+    await realtime.init(false, {
         max_retries: 2,
         debug: true
     });
@@ -32,8 +32,8 @@ async function run(){
         console.log("power-telemetry", data);
     });
 
-    await realtime.on("test232", (data) => {
-        console.log("test232", data);
+    await realtime.on("hello.*", (data) => {
+        console.log("hello.*", data);
     });
 
     realtime.on(MESSAGE_RESEND, (data) => {

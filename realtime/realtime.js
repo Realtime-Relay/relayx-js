@@ -2,6 +2,7 @@ import { connect, JSONCodec, Events, DebugEvents, AckPolicy, ReplayPolicy, creds
 import { DeliverPolicy, jetstream } from "@nats-io/jetstream";
 import { encode, decode } from "@msgpack/msgpack";
 import { v4 as uuidv4 } from 'uuid';
+import { initDNSSpoof } from "./dns_change.js";
 
 export class Realtime {
 
@@ -109,23 +110,28 @@ export class Realtime {
         this.staging = staging; 
         this.opts = opts;
 
-        if (staging !== undefined || staging !== null){
-            this.#baseUrl = staging ? [
-                "nats://0.0.0.0:4221",
-                "nats://0.0.0.0:4222",
-                "nats://0.0.0.0:4223"
-                ] : 
-                [
+        if(process.env.PROXY){
+            this.#baseUrl = ["tls://api2.relay-x.io:8666"];
+            initDNSSpoof();
+        }else{
+            if (staging !== undefined || staging !== null){
+                this.#baseUrl = staging ? [
+                        "nats://0.0.0.0:4221",
+                        "nats://0.0.0.0:4222",
+                        "nats://0.0.0.0:4223",
+                    ] : 
+                    [
+                        `tls://api2.relay-x.io:4221`,
+                        `tls://api2.relay-x.io:4222`,
+                        `tls://api2.relay-x.io:4223`
+                    ];
+            }else{
+                this.#baseUrl = [
                     `tls://api.relay-x.io:4221`,
                     `tls://api.relay-x.io:4222`,
                     `tls://api.relay-x.io:4223`
                 ];
-        }else{
-            this.#baseUrl = [
-                `tls://api.relay-x.io:4221`,
-                `tls://api.relay-x.io:4222`,
-                `tls://api.relay-x.io:4223`
-            ];
+            }
         }
 
         this.#log(this.#baseUrl);
@@ -180,6 +186,7 @@ export class Realtime {
                 reconnectTimeWait: 1000,
                 authenticator: credsAuth,
                 token: this.api_key,
+                resolve: process.env.PROXY ? false : true
             });
 
             this.#jetstream = await jetstream(this.#natsClient);
@@ -574,7 +581,7 @@ export class Realtime {
 
         var opts = { 
             name: `${topic}_${uuidv4()}`,
-            filter_subjects: [this.#getStreamTopic(topic), this.#getStreamTopic(topic) + "_presence"],
+            filter_subjects: [this.#getStreamTopic(topic)],
             replay_policy: ReplayPolicy.Instant,
             opt_start_time: new Date(),
             ack_policy: AckPolicy.Explicit,
@@ -664,7 +671,7 @@ export class Realtime {
             this.#latencyPush = setTimeout(async () => {
                 this.#log("setTimeout called");
 
-                if(this.#latency.length > 0){
+                if(this.#latency.length > 0 && this.connected){
                     this.#log("Push from setTimeout")
                     await this.#pushLatencyData({
                         timezone: timeZone,
@@ -736,7 +743,9 @@ export class Realtime {
             var arrayCheck = ![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
                 this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND, SERVER_DISCONNECT].includes(topic);
 
-            var spaceStarCheck = !topic.includes(" ") && !topic.includes("*") && !topic.includes(".");
+            const TOPIC_REGEX = /^(?!\$)[A-Za-z0-9_,.*>\$-]+$/;
+
+            var spaceStarCheck = !topic.includes(" ") && TOPIC_REGEX.test(topic);
 
             return arrayCheck && spaceStarCheck;
         }else{
