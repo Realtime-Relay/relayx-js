@@ -32,8 +32,8 @@ async function run(){
         console.log("power-telemetry", data);
     });
 
-    await realtime.on("test232", (data) => {
-        console.log("test232", data);
+    await realtime.on("hello.*", (data) => {
+        console.log("hello.*", data);
     });
 
     realtime.on(MESSAGE_RESEND, (data) => {

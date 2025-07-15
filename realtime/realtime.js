@@ -581,7 +581,7 @@ export class Realtime {
 
         var opts = { 
             name: `${topic}_${uuidv4()}`,
-            filter_subjects: [this.#getStreamTopic(topic), this.#getStreamTopic(topic) + "_presence"],
+            filter_subjects: [this.#getStreamTopic(topic)],
             replay_policy: ReplayPolicy.Instant,
             opt_start_time: new Date(),
             ack_policy: AckPolicy.Explicit,
