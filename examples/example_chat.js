@@ -28,13 +28,26 @@ async function run(){
         console.log(`[IMPL] DISONNECT`)
     });
 
-    await realtime.on("power-telemetry", (data) => {
-        console.log("power-telemetry", data);
-    });
+    // await realtime.on("power-telemetry", (data) => {
+    //     console.log("power-telemetry", data);
+    // });
 
-    await realtime.on("hello.*", (data) => {
-        console.log("hello.*", data);
-    });
+    // await realtime.on("hello.*", (data) => {
+    //     console.log("hello.*", data);
+    // });
+
+    // await realtime.on("hello.>", async (data) => {
+    //     await realtime.sleep(10000)
+    //     console.log("hello.>", data);
+    // });
+
+    // await realtime.on("hello.hey.*", (data) => {
+    //     console.log("hell.hey.*", data);
+    // });
+
+    // await realtime.on("hello.hey.>", (data) => {
+    //     console.log("hello.hey.>", data);
+    // });
 
     realtime.on(MESSAGE_RESEND, (data) => {
         console.log(`[MSG RESEND] => ${data}`)
