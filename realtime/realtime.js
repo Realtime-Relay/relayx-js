@@ -126,9 +126,9 @@ export class Realtime {
                         "nats://0.0.0.0:4223",
                     ] : 
                     [
-                        `tls://api.relay-x.io:4221`,
-                        `tls://api.relay-x.io:4222`,
-                        `tls://api.relay-x.io:4223`
+                        `tls://api2.relay-x.io:4221`,
+                        `tls://api2.relay-x.io:4222`,
+                        `tls://api2.relay-x.io:4223`
                     ];
             }else{
                 this.#baseUrl = [
@@ -511,7 +511,7 @@ export class Realtime {
         }
 
         var opts = { 
-            name: `${topic}_${uuidv4()}_history`,
+            name: `nodejs_${topic}_${uuidv4()}_history_consumer`,
             filter_subjects: [this.#getStreamTopic(topic)],
             replay_policy: ReplayPolicy.Instant,
             opt_start_time: start,
@@ -597,7 +597,7 @@ export class Realtime {
      * @param {string} topic 
      */
     async #startConsumer(topic){
-        const consumerName = `${topic}_${uuidv4()}_consumer`;
+        const consumerName = `nodejs_${topic}_${uuidv4()}_consumer`;
 
         var opts = { 
             name: consumerName,
