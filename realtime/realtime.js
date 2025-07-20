@@ -12,17 +12,16 @@ export class Realtime {
     #codec = JSONCodec();
     #jetstream = null;
     #consumerMap = {};
-    #consumer = null;
 
     #event_func = {}; 
     #topicMap = []; 
-
-    #config = "CiAgICAgICAgLS0tLS1CRUdJTiBOQVRTIFVTRVIgSldULS0tLS0KICAgICAgICBKV1RfS0VZCiAgICAgICAgLS0tLS0tRU5EIE5BVFMgVVNFUiBKV1QtLS0tLS0KCiAgICAgICAgKioqKioqKioqKioqKioqKioqKioqKioqKiBJTVBPUlRBTlQgKioqKioqKioqKioqKioqKioqKioqKioqKgogICAgICAgIE5LRVkgU2VlZCBwcmludGVkIGJlbG93IGNhbiBiZSB1c2VkIHRvIHNpZ24gYW5kIHByb3ZlIGlkZW50aXR5LgogICAgICAgIE5LRVlzIGFyZSBzZW5zaXRpdmUgYW5kIHNob3VsZCBiZSB0cmVhdGVkIGFzIHNlY3JldHMuCgogICAgICAgIC0tLS0tQkVHSU4gVVNFUiBOS0VZIFNFRUQtLS0tLQogICAgICAgIFNFQ1JFVF9LRVkKICAgICAgICAtLS0tLS1FTkQgVVNFUiBOS0VZIFNFRUQtLS0tLS0KCiAgICAgICAgKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKgogICAgICAgIA=="
 
     // Status Codes
     #RECONNECTING = "RECONNECTING";
     #RECONNECTED = "RECONNECTED";
     #RECONN_FAIL = "RECONN_FAIL";
+
+    #reservedSystemTopics = [CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED, this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND, SERVER_DISCONNECT];
 
     setRemoteUserAttempts = 0;
     setRemoteUserRetries = 5; 
@@ -42,6 +41,8 @@ export class Realtime {
     #isSendingLatency = false;
 
     #maxPublishRetries = 5; 
+
+    #connectCalled = false;
 
     constructor(config){
         if(typeof config != "object"){
@@ -98,10 +99,13 @@ export class Realtime {
             if(arguments[0] instanceof Object){
                 opts = arguments[0];
                 staging = false;
-            }else{
+            }else if(typeof arguments[0] == "boolean"){
                 opts = {};
                 staging = arguments[0];
                 this.#log(staging)
+            }else{
+                opts = {};
+                staging = false
             }
         }else{
             staging = false;
@@ -172,6 +176,10 @@ export class Realtime {
      * Connects to the relay network
      */
     async connect(){
+        if(this.#connectCalled){
+            return;
+        }
+
         this.SEVER_URL = this.#baseUrl;
 
         var credsFile = this.#getUserCreds(this.api_key, this.secret)
@@ -195,6 +203,7 @@ export class Realtime {
             await this.#getNameSpace()
 
             this.connected = true;
+            this.#connectCalled = true;
         }catch(err){
             this.#log("ERR")
             this.#log(err);
@@ -205,17 +214,13 @@ export class Realtime {
         if (this.connected == true){
             this.#log("Connected to server!");
 
-            // Callback on client side
-            if (CONNECTED in this.#event_func){
-                if (this.#event_func[CONNECTED] !== null || this.#event_func[CONNECTED] !== undefined){
-                    this.#event_func[CONNECTED]()
-                }
-            }
-
             this.#natsClient.closed().then(() => {
                 this.#log("the connection closed!");
 
                 this.#offlineMessageBuffer.length = 0;
+                this.connected = false;
+                this.reconnecting = false;
+                this.#connectCalled = false;
 
                 if (DISCONNECTED in this.#event_func){
                     if (this.#event_func[DISCONNECTED] !== null || this.#event_func[DISCONNECTED] !== undefined){
@@ -233,12 +238,6 @@ export class Realtime {
                         this.#log(`client disconnected - ${s.data}`);
 
                         this.connected = false;
-
-                        if (DISCONNECTED in this.#event_func){
-                            if (this.#event_func[DISCONNECTED] !== null || this.#event_func[DISCONNECTED] !== undefined){
-                                this.#event_func[DISCONNECTED]()
-                            }
-                        }
                     break;
                     case Events.LDM:
                         this.#log("client has been requested to reconnect");
@@ -268,6 +267,7 @@ export class Realtime {
                         this.#log("client is attempting to reconnect");
 
                         this.reconnecting = true;
+                        this.connected = false;
 
                         if(RECONNECT in this.#event_func && this.reconnecting){
                             this.#event_func[RECONNECT](this.#RECONNECTING);   
@@ -285,6 +285,13 @@ export class Realtime {
             // Subscribe to topics
             this.#subscribeToTopics();
             this.#log("Subscribed to topics");
+
+            // Callback on client side
+            if (CONNECTED in this.#event_func){
+                if (this.#event_func[CONNECTED] !== null || this.#event_func[CONNECTED] !== undefined){
+                    this.#event_func[CONNECTED]()
+                }
+            }
         }
     }
 
@@ -295,12 +302,11 @@ export class Realtime {
         if(this.#natsClient !== null){
             this.reconnected = false;
             this.disconnected = true;
-            
-            this.#consumer?.delete()
+            this.#connectCalled = false;
             
             this.#offlineMessageBuffer.length = 0;
 
-            await this.#deleteConsumer();
+            await this.#deleteAllConsumers();
 
             this.#natsClient.close();
         }else{
@@ -312,8 +318,20 @@ export class Realtime {
      * Start consumers for topics initialized by user
      */
     async #subscribeToTopics(){
-        if(this.#topicMap.length > 0){
-            await this.#startConsumer(); 
+        this.#topicMap.forEach(async (topic) => {
+            // Subscribe to stream
+            await this.#startConsumer(topic); 
+        });
+    }
+
+    /**
+     * Delete consumers for topics initialized by user
+     */
+    async #deleteAllConsumers(){
+        for(let i = 0; i < this.#topicMap.length; i++){
+            let topic = this.#topicMap[i];
+
+            await this.#deleteConsumer(topic); 
         }
     }
 
@@ -335,6 +353,8 @@ export class Realtime {
         this.#topicMap = this.#topicMap.filter(item => item !== topic);
 
         delete this.#event_func[topic];
+
+        return await this.#deleteConsumer(topic);
     }
 
     /**
@@ -360,31 +380,23 @@ export class Realtime {
             throw new Error(`Expected $topic type -> string. Instead receieved -> ${typeof topic}`);
         }
 
-        if(!(topic in this.#event_func)){
-            this.#event_func[topic] = func;
-        }else{
+        if(topic in this.#event_func || this.#topicMap.includes(topic)){
             return false
         }
 
-        if (![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
-            this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND, SERVER_DISCONNECT].includes(topic)){
-                if(!this.isTopicValid(topic)){
-                    // We have an invalid topic, lets remove it
-                    if(topic in this.#event_func){
-                        delete this.#event_func[topic];
-                    }
+        this.#event_func[topic] = func;
 
-                    throw new Error("Invalid topic, use isTopicValid($topic) to validate topic")
-                }
+        if (!this.#reservedSystemTopics.includes(topic)){
+            if(!this.isTopicValid(topic)){
+                throw new Error("Invalid topic, use isTopicValid($topic) to validate topic")
+            }
 
-                if(!this.#topicMap.includes(topic)){
-                    this.#topicMap.push(topic);
-                }
+            this.#topicMap.push(topic);
 
-                if(this.connected){
-                    // Connected we need to create a topic in a stream
-                    await this.#startConsumer(topic);
-                }
+            if(this.connected){
+                // Connected we need to create a topic in a stream
+                await this.#startConsumer(topic);
+            }
         }
 
         return true;
@@ -414,7 +426,7 @@ export class Realtime {
             throw new Error("Invalid topic, use isTopicValid($topic) to validate topic")
         }
 
-        if(!this.#isMessageValid(data)){
+        if(!this.isMessageValid(data)){
             throw new Error("$message must be JSON, string or number")
         }
 
@@ -429,15 +441,9 @@ export class Realtime {
             "start": Date.now()
         }
 
-        this.#log("Encoding message via msg pack...")
-        var encodedMessage = encode(message);
-
         if(this.connected){
-            if(!this.#topicMap.includes(topic)){
-                this.#topicMap.push(topic);
-            }else{
-                this.#log(`${topic} exists locally, moving on...`)
-            }
+            this.#log("Encoding message via msg pack...")
+            var encodedMessage = encode(message);
 
             this.#log(`Publishing to topic => ${this.#getStreamTopic(topic)}`)
     
@@ -464,7 +470,6 @@ export class Realtime {
      * @param {string} topic 
      */
     async history(topic, start, end){
-        this.#log(start)
         if(topic == null || topic == undefined){
             throw new Error("$topic is null or undefined");
         }
@@ -501,11 +506,16 @@ export class Realtime {
             end = end.toISOString();
         }
 
+        if(!this.connected){
+            return [];
+        }
+
         var opts = { 
             name: `${topic}_${uuidv4()}_history`,
             filter_subjects: [this.#getStreamTopic(topic)],
             replay_policy: ReplayPolicy.Instant,
             opt_start_time: start,
+            delivery_policy: DeliverPolicy.StartTime,
             ack_policy: AckPolicy.Explicit,
         }
 
@@ -534,7 +544,12 @@ export class Realtime {
             var data = decode(msg.data);
             this.#log(data);
             
-            history.push(data.message);
+            history.push({
+                "id": data.id,
+                "topic": data.room,
+                "message": data.message,
+                "timestamp": msg.timestamp
+            });
         }
 
         var del = await consumer.delete();
@@ -581,45 +596,43 @@ export class Realtime {
      * Starts consumer for particular topic if stream exists
      * @param {string} topic 
      */
-    async #startConsumer(){
-        if(this.#consumer != null){
-            return;
-        }
+    async #startConsumer(topic){
+        const consumerName = `${topic}_${uuidv4()}_consumer`;
 
         var opts = { 
-            name: `${uuidv4()}`,
-            filter_subjects: [this.#getStreamTopic(">")],
+            name: consumerName,
+            filter_subjects: [this.#getStreamTopic(topic)],
             replay_policy: ReplayPolicy.Instant,
             opt_start_time: new Date(),
             ack_policy: AckPolicy.Explicit,
             delivery_policy: DeliverPolicy.New
         }
 
-        this.#consumer = await this.#jetstream.consumers.get(this.#getStreamName(), opts);
+        const consumer = await this.#jetstream.consumers.get(this.#getStreamName(), opts);
         this.#log(this.#topicMap)
 
-        await this.#consumer.consume({
+        this.#consumerMap[topic] = consumer;
+
+        await consumer.consume({
             callback: async (msg) => {
                 try{
                     const now = Date.now();
+                    msg.working()
                     this.#log("Decoding msgpack message...")
                     var data = decode(msg.data);
 
-                    var room = this.#stripStreamHash(msg.subject);
+                    var msgTopic = this.#stripStreamHash(msg.subject);
 
                     this.#log(data);
 
                     // Push topic message to main thread
                     if (data.client_id != this.#getClientId()){
-                        var topics = this.#getCallbackTopics(room);
-                        this.#log(topics)
+                        var topicMatch = this.#topicPatternMatcher(topic, msgTopic)
 
-                        for(let i = 0; i < topics.length; i++){
-                            var top = topics[i];
-
-                            this.#event_func[top]({
+                        if(topicMatch){
+                            this.#event_func[topic]({
                                 "id": data.id,
-                                "topic": room,
+                                "topic": msgTopic,
                                 "data": data.message
                             });
                         }
@@ -637,14 +650,19 @@ export class Realtime {
         this.#log("Consumer is consuming");
     }
 
-    async #deleteConsumer(){
+    async #deleteConsumer(topic){
+        this.#log(topic)
+        const consumer = this.#consumerMap[topic]
+
         var del = false;
 
-        if (this.#consumer != null && this.#consumer != undefined){
-            del = await this.#consumer.delete();
+        if (consumer != null && consumer != undefined){
+            del = await consumer.delete();
         }else{
             del = false
         }
+
+        delete this.#consumerMap[topic];
 
         return del;
     }
@@ -652,11 +670,6 @@ export class Realtime {
     async #logLatency(now, data){
         if(data.client_id == this.#getClientId()){
             this.#log("Skipping latency log for own message");
-            return;
-        }
-
-        if(this.#latency.length >= 100){
-            this.#log("Latency array is full, skipping log");
             return;
         }
 
@@ -676,7 +689,7 @@ export class Realtime {
             this.#latencyPush = setTimeout(async () => {
                 this.#log("setTimeout called");
 
-                if(this.#latency.length > 0 && this.connected){
+                if(this.#latency.length > 0 && this.connected && !this.#isSendingLatency){
                     this.#log("Push from setTimeout")
                     await this.#pushLatencyData({
                         timezone: timeZone,
@@ -689,7 +702,7 @@ export class Realtime {
             }, 30000);
         }
 
-        if(this.#latency.length == 100 && !this.#isSendingLatency){
+        if(this.#latency.length >= 100 && !this.#isSendingLatency){
             this.#log("Push from Length Check: " + this.#latency.length);
             await this.#pushLatencyData({
                         timezone: timeZone,
@@ -745,8 +758,7 @@ export class Realtime {
      */
     isTopicValid(topic){
         if(topic !== null && topic !== undefined && (typeof topic) == "string"){
-            var arrayCheck = ![CONNECTED, DISCONNECTED, RECONNECT, this.#RECONNECTED,
-                this.#RECONNECTING, this.#RECONN_FAIL, MESSAGE_RESEND, SERVER_DISCONNECT].includes(topic);
+            var arrayCheck = !this.#reservedSystemTopics.includes(topic);
 
             const TOPIC_REGEX = /^(?!.*\$)(?:[A-Za-z0-9_*~-]+(?:\.[A-Za-z0-9_*~-]+)*(?:\.>)?|>)$/u;
 
@@ -758,7 +770,7 @@ export class Realtime {
         }
     }
 
-    #isMessageValid(message){
+    isMessageValid(message){
         if(message == null || message == undefined){
             throw new Error("$message cannot be null / undefined")
         }
@@ -955,13 +967,21 @@ export class Realtime {
         return methodDataOutput;
     }
 
-    #getUserCreds(jwt, secret){
-        var template = Buffer.from(this.#config, "base64").toString("utf8")
+     #getUserCreds(jwt, secret){
+        return `
+-----BEGIN NATS USER JWT-----
+${jwt}
+------END NATS USER JWT------
 
-        var creds = template.replace("JWT_KEY", jwt);
-        creds = creds.replace("SECRET_KEY", secret)
+************************* IMPORTANT *************************
+NKEY Seed printed below can be used to sign and prove identity.
+NKEYs are sensitive and should be treated as secrets.
 
-        return creds
+-----BEGIN USER NKEY SEED-----
+${secret}
+------END USER NKEY SEED------
+
+*************************************************************`
     }
 
     // Exposure for tests
