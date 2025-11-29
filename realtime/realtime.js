@@ -1,8 +1,10 @@
 import { connect, JSONCodec, Events, DebugEvents, AckPolicy, ReplayPolicy, credsAuthenticator } from "nats";
-import { DeliverPolicy, jetstream } from "@nats-io/jetstream";
+import { DeliverPolicy, jetstream, jetstreamManager } from "@nats-io/jetstream";
 import { encode, decode } from "@msgpack/msgpack";
 import { v4 as uuidv4 } from 'uuid';
 import { initDNSSpoof } from "./dns_change.js";
+import { Queue } from "./queue.js";
+import { ErrorLogging } from "./utils.js";
 
 export class Realtime {
 
@@ -11,10 +13,13 @@ export class Realtime {
     #natsClient = null; 
     #codec = JSONCodec();
     #jetstream = null;
+    #jetStreamManager = null;
     #consumerMap = {};
 
     #event_func = {}; 
     #topicMap = []; 
+
+    #errorLogging = null;
 
     // Status Codes
     #RECONNECTING = "RECONNECTING";
@@ -77,6 +82,9 @@ export class Realtime {
          * @param{boolean} staging - Sets URL to staging or production URL
          * @param{Object} opts - Library configuration options
          */
+
+        this.#errorLogging = new ErrorLogging();
+
         var len = arguments.length;
 
         if (len > 2){
@@ -199,6 +207,7 @@ export class Realtime {
             });
 
             this.#jetstream = await jetstream(this.#natsClient);
+            this.#jetStreamManager = await jetstreamManager(this.#natsClient)
 
             await this.#getNameSpace()
 
@@ -231,54 +240,53 @@ export class Realtime {
             
             (async () => {
                 for await (const s of this.#natsClient.status()) {
-                this.#log(s.type)
+                    switch (s.type) {
+                        case Events.Disconnect:
+                            this.#log(`client disconnected - ${s.data}`);
 
-                switch (s.type) {
-                    case Events.Disconnect:
-                        this.#log(`client disconnected - ${s.data}`);
+                            this.connected = false;
+                        break;
+                        case Events.LDM:
+                            this.#log("client has been requested to reconnect");
+                        break;
+                        case Events.Update:
+                            this.#log(`client received a cluster update - `);
+                            this.#log(s.data)
+                        break;
+                        case Events.Reconnect:
+                            this.#log(`client reconnected -`);
+                            this.#log(s.data)
 
-                        this.connected = false;
-                    break;
-                    case Events.LDM:
-                        this.#log("client has been requested to reconnect");
-                    break;
-                    case Events.Update:
-                        this.#log(`client received a cluster update - `);
-                        this.#log(s.data)
-                    break;
-                    case Events.Reconnect:
-                        this.#log(`client reconnected -`);
-                        this.#log(s.data)
+                            this.reconnecting = false;
+                            this.connected = true;
 
-                        this.reconnecting = false;
-                        this.connected = true;
+                            if(RECONNECT in this.#event_func){
+                                this.#event_func[RECONNECT](this.#RECONNECTED);   
+                            }
 
-                        if(RECONNECT in this.#event_func){
-                            this.#event_func[RECONNECT](this.#RECONNECTED);   
-                        }
+                            // Resend any messages sent while client was offline
+                            this.#publishMessagesOnReconnect();
+                        break;
+                        // case Events.Error:
+                        //     this.#log(s.data)
+                        //     this.#log("client got a permissions error");
+                        break;
+                        case DebugEvents.Reconnecting:
+                            this.#log("client is attempting to reconnect");
 
-                        // Resend any messages sent while client was offline
-                        this.#publishMessagesOnReconnect();
-                    break;
-                    case Events.Error:
-                        this.#log("client got a permissions error");
-                    break;
-                    case DebugEvents.Reconnecting:
-                        this.#log("client is attempting to reconnect");
+                            this.reconnecting = true;
+                            this.connected = false;
 
-                        this.reconnecting = true;
-                        this.connected = false;
-
-                        if(RECONNECT in this.#event_func && this.reconnecting){
-                            this.#event_func[RECONNECT](this.#RECONNECTING);   
-                        }
-                    break;
-                    case DebugEvents.StaleConnection:
-                        this.#log("client has a stale connection");
-                    break;
-                    default:
-                        this.#log(`got an unknown status ${s.type}`);
-                }
+                            if(RECONNECT in this.#event_func && this.reconnecting){
+                                this.#event_func[RECONNECT](this.#RECONNECTING);   
+                            }
+                        break;
+                        case DebugEvents.StaleConnection:
+                            this.#log("client has a stale connection");
+                        break;
+                        // default:
+                        //     this.#log(`got an unknown status ${s.type}`);
+                    }
                 }
             })().then();
 
@@ -447,12 +455,20 @@ export class Realtime {
 
             this.#log(`Publishing to topic => ${this.#getStreamTopic(topic)}`)
     
-            const ack = await this.#jetstream.publish(this.#getStreamTopic(topic), encodedMessage);
-            this.#log(`Publish Ack =>`)
-            this.#log(ack)
-    
-            var latency = Date.now() - start;
-            this.#log(`Latency => ${latency} ms`);
+            var ack = null;
+
+            try{
+                ack = await this.#jetstream.publish(this.#getStreamTopic(topic), encodedMessage);
+                this.#log(`Publish Ack =>`)
+                this.#log(ack)
+        
+                var latency = Date.now() - start;
+                this.#log(`Latency => ${latency} ms`);
+            }catch(err){
+                this.#errorLogging.logError({
+                    err: err
+                })
+            }
 
             return ack !== null && ack !== undefined;
         }else{
@@ -597,11 +613,11 @@ export class Realtime {
      * @param {string} topic 
      */
     async #startConsumer(topic){
-        const consumerName = `nodejs_${topic}_${uuidv4()}_consumer`;
+        const consumerName = `nodejs_${uuidv4()}_consumer`;
 
         var opts = { 
             name: consumerName,
-            filter_subjects: [this.#getStreamTopic(topic)],
+            filter_subjects: this.#getStreamTopic(topic),
             replay_policy: ReplayPolicy.Instant,
             opt_start_time: new Date(),
             ack_policy: AckPolicy.Explicit,
@@ -609,7 +625,6 @@ export class Realtime {
         }
 
         const consumer = await this.#jetstream.consumers.get(this.#getStreamName(), opts);
-        this.#log(this.#topicMap)
 
         this.#consumerMap[topic] = consumer;
 
@@ -639,15 +654,14 @@ export class Realtime {
                     }
 
                     msg.ack();
-
-                    await this.#logLatency(now, data);
                 }catch(err){
                     this.#log("Consumer err " + err);
                     msg.nak(5000);
                 }
             }
         });
-        this.#log("Consumer is consuming");
+        
+        this.#log("Consumer is consuming => " + topic);
     }
 
     async #deleteConsumer(topic){
@@ -709,6 +723,24 @@ export class Realtime {
                         history: this.#latency,
                     });
         }
+    }
+
+    // Queue Functions
+    async initQueue(queueID){
+        this.#log("Validating queue ID...")
+        if(queueID == undefined || queueID == null || queueID == ""){
+            throw new Error("$queueID cannot be null / undefined / empty!")
+        }
+
+        var queue = new Queue({
+            jetstream: this.#jetstream,
+            nats_client: this.#natsClient,
+            api_key: this.api_key
+        });
+
+        var initResult = await queue.init(queueID);
+
+        return initResult ? queue : null;
     }
 
     // Utility functions
@@ -801,7 +833,7 @@ export class Realtime {
 
     #getStreamName(){
         if(this.namespace != null){
-            return this.namespace + "_stream"
+            return `${this.namespace}_stream`
         }else{
             this.close();
             throw new Error("$namespace is null. Cannot initialize program with null $namespace")
