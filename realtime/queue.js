@@ -309,10 +309,6 @@ export class Queue {
 
         delete this.#event_func[topic];
 
-        var consumer = this.#consumerMap[topic];
-        console.log(consumer)
-        await consumer.close();
-
         delete this.#consumerMap[topic];
     }
 
@@ -429,43 +425,55 @@ export class Queue {
 
         this.#consumerMap[topic] = consumer;
 
-        await consumer.consume({
-            callback: async (msg) => {
-                try{
-                    const now = Date.now();
-                    msg.working()
-                    this.#log("Decoding msgpack message...")
-                    var data = decode(msg.data);
+        while(true){
+            var msg = await consumer.next({
+                expires: 1000
+            });
 
-                    var msgTopic = this.#stripStreamHash(msg.subject);
+            if(!this.#checkVarOk(this.#consumerMap[topic])){
+                // consumerMap has no callback function because 
+                // we called detachConsumer(). We did that because
+                // we did not want to consumer messages anymore
 
-                    this.#log(data);
-
-                    // Push topic message to main thread
-                    if (data.client_id != this.#getClientId()){
-                        var topicMatch = this.#topicPatternMatcher(topic, msgTopic)
-
-                        if(topicMatch){
-                            var fMsg = {
-                                id: data.id,
-                                topic: msgTopic,
-                                message: data.message,
-                                msg: msg
-                            }
-
-                            var msgObj = new Message(fMsg)
-
-                            this.#event_func[topic](msgObj);
-                        }
-                    }
-                }catch(err){
-                    this.#log("Consumer err " + err);
-                    msg.nak(5000);
-                }
+                break;
             }
-        });
 
-        this.#log("Consumer is consuming => " + topic);
+            if(msg == null){
+                continue
+            }
+
+            try{
+                const now = Date.now();
+                msg.working()
+                this.#log("Decoding msgpack message...")
+                var data = decode(msg.data);
+
+                var msgTopic = this.#stripStreamHash(msg.subject);
+
+                this.#log(data);
+
+                // Push topic message to main thread
+                if (data.client_id != this.#getClientId()){
+                    var topicMatch = this.#topicPatternMatcher(topic, msgTopic)
+
+                    if(topicMatch){
+                        var fMsg = {
+                            id: data.id,
+                            topic: msgTopic,
+                            message: data.message,
+                            msg: msg
+                        }
+
+                        var msgObj = new Message(fMsg)
+
+                        this.#event_func[topic](msgObj);
+                    }
+                }
+            }catch(err){
+                this.#log("Consumer err " + err);
+                msg.nak(5000);
+            }
+        }
     }
 
     async deleteConsumer(topic){
