@@ -214,8 +214,16 @@ export class Realtime {
             this.connected = true;
             this.#connectCalled = true;
         }catch(err){
-            this.#log("ERR")
-            this.#log(err);
+            this.#errorLogging.logError({
+                err: err
+            })
+
+            // Callback on client side
+            if (CONNECTED in this.#event_func){
+                if (this.#event_func[CONNECTED] !== null || this.#event_func[CONNECTED] !== undefined){
+                    this.#event_func[CONNECTED](false)
+                }
+            }
 
             this.connected = false;
         }
@@ -267,9 +275,12 @@ export class Realtime {
                             // Resend any messages sent while client was offline
                             this.#publishMessagesOnReconnect();
                         break;
-                        // case Events.Error:
-                        //     this.#log(s.data)
-                        //     this.#log("client got a permissions error");
+                        case Events.Error:
+                            if(s.data == "NATS_PROTOCOL_ERR"){
+                                console.log("User kicked off network by account admin!")
+
+                                await this.#natsClient.close();
+                            }
                         break;
                         case DebugEvents.Reconnecting:
                             this.#log("client is attempting to reconnect");
@@ -297,7 +308,7 @@ export class Realtime {
             // Callback on client side
             if (CONNECTED in this.#event_func){
                 if (this.#event_func[CONNECTED] !== null || this.#event_func[CONNECTED] !== undefined){
-                    this.#event_func[CONNECTED]()
+                    this.#event_func[CONNECTED](true)
                 }
             }
         }
@@ -654,6 +665,8 @@ export class Realtime {
                     }
 
                     msg.ack();
+
+                    await this.#logLatency(now, data);
                 }catch(err){
                     this.#log("Consumer err " + err);
                     msg.nak(5000);
@@ -727,6 +740,12 @@ export class Realtime {
 
     // Queue Functions
     async initQueue(queueID){
+        if(!this.connected){
+            this.#log("Not connected to relayX network. Skipping queue init")
+
+            return;
+        }
+
         this.#log("Validating queue ID...")
         if(queueID == undefined || queueID == null || queueID == ""){
             throw new Error("$queueID cannot be null / undefined / empty!")
@@ -735,7 +754,8 @@ export class Realtime {
         var queue = new Queue({
             jetstream: this.#jetstream,
             nats_client: this.#natsClient,
-            api_key: this.api_key
+            api_key: this.api_key,
+            debug: this.opts?.debug ? this.opts?.debug : false
         });
 
         var initResult = await queue.init(queueID);

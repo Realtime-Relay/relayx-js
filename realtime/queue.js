@@ -22,6 +22,7 @@ export class Queue {
     #topicMap = []; 
 
     #errorLogging = null;
+    #debug = false;
 
     // Status Codes
     #RECONNECTING = "RECONNECTING";
@@ -48,13 +49,6 @@ export class Queue {
     // Offline messages
     #offlineMessageBuffer = [];
 
-    // Latency
-    #latency = [];
-    #latencyPush = null;
-    #isSendingLatency = false;
-
-    #maxPublishRetries = 5; 
-
     #connectCalled = false;
 
     constructor(config){
@@ -62,6 +56,8 @@ export class Queue {
         this.#natsClient = config.nats_client;
 
         this.#api_key = config.api_key;
+
+        this.#debug = config.debug;
 
         this.#errorLogging = new ErrorLogging();
     }
@@ -153,10 +149,6 @@ export class Queue {
 
                         // Resend any messages sent while client was offline
                         this.#publishMessagesOnReconnect();
-                    break;
-                    // case Events.Error:
-                    //     this.#log(s.data)
-                    //     this.#log("client got a permissions error");
                     break;
                     case DebugEvents.Reconnecting:
                         this.#log("client is attempting to reconnect");
@@ -252,12 +244,8 @@ export class Queue {
     async consume(data, func){
         var topic = data.topic;
 
-        if(topic == null || topic == undefined){
-            throw new Error("$topic is null / undefined")
-        }
-
-        if(func == null || func == undefined){
-            throw new Error("$func is null / undefined")
+        if(!this.isTopicValid(topic) && this.#reservedSystemTopics.includes(topic)){
+            throw new Error(`Invalid Topic!`);
         }
 
         if ((typeof func !== "function")){
@@ -286,8 +274,6 @@ export class Queue {
                 await this.#startConsumer(data);
             }
         }
-
-        return true;
     }
 
     /**
@@ -310,6 +296,8 @@ export class Queue {
         delete this.#event_func[topic];
 
         delete this.#consumerMap[topic];
+
+        this.#log(`Consumer closed => ${topic}`)
     }
 
     /**
@@ -349,8 +337,8 @@ export class Queue {
         this.#offlineMessageBuffer.length = 0;
 
         // Send to client
-        if(MESSAGE_RESEND in this.#event_func && messageSentStatus.length > 0){
-            this.#event_func[MESSAGE_RESEND](messageSentStatus);
+        if(this.MESSAGE_RESEND in this.#event_func && messageSentStatus.length > 0){
+            this.#event_func[this.MESSAGE_RESEND](messageSentStatus);
         }
     }
 
@@ -474,6 +462,8 @@ export class Queue {
                 msg.nak(5000);
             }
         }
+
+        this.#log(`Consumer done => ${topic}`)
     }
 
     async deleteConsumer(topic){
@@ -493,88 +483,9 @@ export class Queue {
         return del;
     }
 
-    async #logLatency(now, data){
-        if(data.client_id == this.#getClientId()){
-            this.#log("Skipping latency log for own message");
-            return;
-        }
-
-        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-        this.#log(`Timezone: ${timeZone}`);
-
-        const latency = now - data.start
-        this.#log(`Latency => ${latency}`)
-
-        this.#latency.push({
-            latency: latency,
-            timestamp: now
-        });
-
-        if(this.#latencyPush == null){
-            this.#latencyPush = setTimeout(async () => {
-                this.#log("setTimeout called");
-
-                if(this.#latency.length > 0 && this.connected && !this.#isSendingLatency){
-                    this.#log("Push from setTimeout")
-                    await this.#pushLatencyData({
-                        timezone: timeZone,
-                        history: this.#latency,
-                    });
-                }else{
-                    this.#log("No latency data to push");
-                }
-                    
-            }, 30000);
-        }
-
-        if(this.#latency.length >= 100 && !this.#isSendingLatency){
-            this.#log("Push from Length Check: " + this.#latency.length);
-            await this.#pushLatencyData({
-                        timezone: timeZone,
-                        history: this.#latency,
-                    });
-        }
-    }
-
     // Utility functions
     #getClientId(){
         return this.#natsClient?.info?.client_id
-    }
-
-    async #pushLatencyData(data){
-        this.#isSendingLatency = true;
-
-        try{
-            var res = await this.#natsClient.request("accounts.user.log_latency", 
-            JSONCodec().encode({
-                    api_key: this.api_key,
-                    payload: data
-                }),
-                {
-                    timeout: 5000
-                }
-            )
-
-            var data = res.json()
-
-            this.#log(data)
-            this.#resetLatencyTracker();
-        }catch(err){
-            this.#log("Error getting pushing latency data")
-            this.#log(err);
-        }
-
-        this.#isSendingLatency = false;
-    }
-
-    #resetLatencyTracker(){
-        this.#latency = [];
-
-        if(this.#latencyPush != null){
-            clearTimeout(this.#latencyPush);
-            this.#latencyPush = null;
-        }
     }
 
     /**
@@ -727,11 +638,9 @@ export class Queue {
     }
 
     #log(msg){
-        // if(this.opts?.debug){
-        //     console.log(msg);
-        // }
-
-        console.log(msg);
+        if(this.#debug){
+            console.log(msg);
+        }
     }
 
 }

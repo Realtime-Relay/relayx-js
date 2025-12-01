@@ -48,6 +48,12 @@ export class ErrorLogging {
 
                     throw new Error(`User is not permitted to subscribe to '${data.topic}'`)
                 }
+            }else if(code == "AUTHORIZATION_VIOLATION"){
+                console.table({
+                    Event: "Authentication Failure",
+                    Description: `User failed to authenticate. Check if API key exists & if it is enabled`,
+                    "Docs to Solve Issue": "<>"
+                })
             }
         }
     }
