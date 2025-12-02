@@ -30,7 +30,7 @@ export class ErrorLogging {
                 console.table({
                     Event: "Consumer Manually Deleted!",
                     Description: "Consumer was manually deleted by user using deleteConsumer() or the library equivalent",
-                    Link: "https://console.relay-x.io/billing"
+                    "Docs to Solve Issue": "<>"
                 })
             }
         }
