@@ -1,4 +1,4 @@
-import { JetStreamApiError } from "@nats-io/jetstream";
+import { JetStreamApiError, JetStreamError } from "@nats-io/jetstream";
 import NatsError from "nats"
 
 export class ErrorLogging {
@@ -18,6 +18,20 @@ export class ErrorLogging {
                 })
 
                 throw new Error("Message limit exceeded!")
+            }
+        }
+
+        if(err instanceof JetStreamError){
+            var code = err.code;
+
+            if(code == 409){
+                // Consumer deleted
+
+                console.table({
+                    Event: "Consumer Manually Deleted!",
+                    Description: "Consumer was manually deleted by user using deleteConsumer() or the library equivalent",
+                    Link: "https://console.relay-x.io/billing"
+                })
             }
         }
 

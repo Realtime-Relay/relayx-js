@@ -271,7 +271,13 @@ export class Queue {
 
             if(this.connected){
                 // Connected we need to create a topic in a stream
-                await this.#startConsumer(data);
+                try{
+                    await this.#startConsumer(data);
+                }catch(err){
+                    this.#errorLogging.logError({
+                        err: err
+                    })
+                }
             }
         }
     }
@@ -466,19 +472,15 @@ export class Queue {
         this.#log(`Consumer done => ${topic}`)
     }
 
-    async deleteConsumer(topic){
-        this.#log(topic)
-        const consumer = this.#consumerMap[topic]
-
+    async deleteConsumer(name){
         var del = false;
 
-        if (consumer != null && consumer != undefined){
-            del = await consumer.delete();
-        }else{
-            del = false
+        try{
+            del = await this.#jetStreamManager.consumers.delete(this.#getQueueName(), name)
+        }catch(err){
+            this.#log("Failed to delete consumer!")
+            this.#log(err)
         }
-
-        delete this.#consumerMap[topic];
 
         return del;
     }
