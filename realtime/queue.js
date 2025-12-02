@@ -196,7 +196,6 @@ export class Queue {
         var messageId = crypto.randomUUID();
 
         var message = {
-            "client_id": this.#getClientId(),
             "id": messageId,
             "room": topic,
             "message": data,
@@ -275,7 +274,7 @@ export class Queue {
                     await this.#startConsumer(data);
                 }catch(err){
                     this.#errorLogging.logError({
-                        err: err
+                        err: err 
                     })
                 }
             }
@@ -447,21 +446,19 @@ export class Queue {
                 this.#log(data);
 
                 // Push topic message to main thread
-                if (data.client_id != this.#getClientId()){
-                    var topicMatch = this.#topicPatternMatcher(topic, msgTopic)
+                var topicMatch = this.#topicPatternMatcher(topic, msgTopic)
 
-                    if(topicMatch){
-                        var fMsg = {
-                            id: data.id,
-                            topic: msgTopic,
-                            message: data.message,
-                            msg: msg
-                        }
-
-                        var msgObj = new Message(fMsg)
-
-                        this.#event_func[topic](msgObj);
+                if(topicMatch){
+                    var fMsg = {
+                        id: data.id,
+                        topic: msgTopic,
+                        message: data.message,
+                        msg: msg
                     }
+
+                    var msgObj = new Message(fMsg)
+
+                    this.#event_func[topic](msgObj);
                 }
             }catch(err){
                 this.#log("Consumer err " + err);
@@ -588,20 +585,7 @@ export class Queue {
         while (i < a.length || j < b.length) {
             const tokA = a[i];
             const tokB = b[j];
-
-            /*──────────── literal match or single‑token wildcard on either side ────────────*/
-            const singleWildcard =
-            (tokA === "*" && j < b.length) ||
-            (tokB === "*" && i < a.length);
-
-            if (
-            (tokA !== undefined && tokA === tokB) ||
-            singleWildcard
-            ) {
-            i++; j++;
-            continue;
-            }
-
+            
             /*────────────────── multi‑token wildcard ">" — must be **final** ───────────────*/
             if (tokA === ">") {
             if (i !== a.length - 1) return false;   // '>' not in last position → invalid
@@ -615,6 +599,19 @@ export class Queue {
             if (i >= a.length)      return false;
             starBi = j++;
             starBj = ++i;
+            continue;
+            }
+
+            /*──────────── literal match or single‑token wildcard on either side ────────────*/
+            const singleWildcard =
+            (tokA === "*" && j < b.length) ||
+            (tokB === "*" && i < a.length);
+
+            if (
+            (tokA !== undefined && tokA === tokB) ||
+            singleWildcard
+            ) {
+            i++; j++;
             continue;
             }
 

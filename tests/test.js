@@ -662,7 +662,8 @@ test("Pattern matcher test", async () => {
         ["foo-bar_*",           "foo-bar_123",              false],  // 47 ( '*' here is literal )
         ["foo-bar_*",           "foo-bar_*",                true],   // 48
         ["order-*",             "order-123",                false],  // 49
-        ["hello.hey.*",         "hello.hey.>",              true]    // 50
+        ["hello.hey.*",         "hello.hey.>",              true],   // 50
+        ["queue.>",             "queue.*.123",              true]    // 51
     ];
 
     var realtime = new Realtime({

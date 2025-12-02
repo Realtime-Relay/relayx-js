@@ -453,7 +453,6 @@ export class Realtime {
         var messageId = crypto.randomUUID();
 
         var message = {
-            "client_id": this.#getClientId(),
             "id": messageId,
             "room": topic,
             "message": data,
@@ -652,16 +651,14 @@ export class Realtime {
                     this.#log(data);
 
                     // Push topic message to main thread
-                    if (data.client_id != this.#getClientId()){
-                        var topicMatch = this.#topicPatternMatcher(topic, msgTopic)
+                    var topicMatch = this.#topicPatternMatcher(topic, msgTopic)
 
-                        if(topicMatch){
-                            this.#event_func[topic]({
-                                "id": data.id,
-                                "topic": msgTopic,
-                                "data": data.message
-                            });
-                        }
+                    if(topicMatch){
+                        this.#event_func[topic]({
+                            "id": data.id,
+                            "topic": msgTopic,
+                            "data": data.message
+                        });
                     }
 
                     msg.ack();
@@ -908,19 +905,6 @@ export class Realtime {
             const tokA = a[i];
             const tokB = b[j];
 
-            /*──────────── literal match or single‑token wildcard on either side ────────────*/
-            const singleWildcard =
-            (tokA === "*" && j < b.length) ||
-            (tokB === "*" && i < a.length);
-
-            if (
-            (tokA !== undefined && tokA === tokB) ||
-            singleWildcard
-            ) {
-            i++; j++;
-            continue;
-            }
-
             /*────────────────── multi‑token wildcard ">" — must be **final** ───────────────*/
             if (tokA === ">") {
             if (i !== a.length - 1) return false;   // '>' not in last position → invalid
@@ -934,6 +918,19 @@ export class Realtime {
             if (i >= a.length)      return false;
             starBi = j++;
             starBj = ++i;
+            continue;
+            }
+
+            /*──────────── literal match or single‑token wildcard on either side ────────────*/
+            const singleWildcard =
+            (tokA === "*" && j < b.length) ||
+            (tokB === "*" && i < a.length);
+
+            if (
+            (tokA !== undefined && tokA === tokB) ||
+            singleWildcard
+            ) {
+            i++; j++;
             continue;
             }
 
@@ -951,7 +948,7 @@ export class Realtime {
             return false;
         }
 
-        return true; 
+        return true;
     } 
 
     sleep(ms) {
