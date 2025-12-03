@@ -126,7 +126,7 @@ async function run(){
             })
         }else{
             rl.question("topic: ", async (topic) => {
-                var output = await queue.publish(topic, input);
+                var output = await realtime.publish(topic, input);
             })
         }
     });
