@@ -219,7 +219,8 @@ export class Queue {
                 this.#log(`Latency => ${latency} ms`);
             }catch(err){
                 this.#errorLogging.logError({
-                    err: err
+                    err: err,
+                    topic: topic
                 })
             }
 
@@ -274,7 +275,8 @@ export class Queue {
                     await this.#startConsumer(data);
                 }catch(err){
                     this.#errorLogging.logError({
-                        err: err 
+                        err: err,
+                        topic: topic
                     })
                 }
             }

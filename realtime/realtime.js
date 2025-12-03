@@ -339,7 +339,14 @@ export class Realtime {
     async #subscribeToTopics(){
         this.#topicMap.forEach(async (topic) => {
             // Subscribe to stream
-            await this.#startConsumer(topic); 
+            try{
+                await this.#startConsumer(topic); 
+            }catch(err){
+                this.#errorLogging.logError({
+                    err: err,
+                    topic: topic
+                })
+            }
         });
     }
 
@@ -414,7 +421,14 @@ export class Realtime {
 
             if(this.connected){
                 // Connected we need to create a topic in a stream
-                await this.#startConsumer(topic);
+                try{
+                    await this.#startConsumer(topic); 
+                }catch(err){
+                    this.#errorLogging.logError({
+                        err: err,
+                        topic: topic
+                    })
+                }
             }
         }
 
@@ -476,7 +490,8 @@ export class Realtime {
                 this.#log(`Latency => ${latency} ms`);
             }catch(err){
                 this.#errorLogging.logError({
-                    err: err
+                    err: err,
+                    topic: topic
                 })
             }
 

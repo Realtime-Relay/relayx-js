@@ -42,7 +42,7 @@ async function run(){
         queue.consume(config, (msg) => {
             console.log(`Queue: ${msg.message}`)
             
-            // msg.ack();
+            msg.ack();
         })
     });
 
@@ -126,7 +126,7 @@ async function run(){
             })
         }else{
             rl.question("topic: ", async (topic) => {
-                var output = await realtime.publish(topic, input);
+                var output = await queue.publish(topic, input);
             })
         }
     });
