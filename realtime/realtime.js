@@ -344,7 +344,8 @@ export class Realtime {
             }catch(err){
                 this.#errorLogging.logError({
                     err: err,
-                    topic: topic
+                    topic: topic,
+                    op: "subscribe"
                 })
             }
         });
@@ -426,7 +427,8 @@ export class Realtime {
                 }catch(err){
                     this.#errorLogging.logError({
                         err: err,
-                        topic: topic
+                        topic: topic,
+                        op: "subscribe"
                     })
                 }
             }
@@ -491,7 +493,8 @@ export class Realtime {
             }catch(err){
                 this.#errorLogging.logError({
                     err: err,
-                    topic: topic
+                    topic: topic,
+                    op: "publish"
                 })
             }
 
