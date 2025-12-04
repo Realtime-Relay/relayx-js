@@ -40,6 +40,7 @@ export class KVStore{
             var json = null;
 
             json = JSON.parse(val.string())
+            
             return json
         }catch(err){
             this.#errorLogger.logError({

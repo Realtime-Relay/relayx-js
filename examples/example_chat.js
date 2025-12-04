@@ -17,7 +17,7 @@ async function run(){
         staging: true, 
         opts: {
             max_retries: 2,
-            debug: true
+            debug: false
         }
     });
 
@@ -64,20 +64,26 @@ async function run(){
         // console.log("get()")
         // console.log(await kvStore.get("key1"))
 
-        // console.log()
-        // console.log("keys()")
-        // var keys = await kvStore.keys()
-        // console.log()
+        console.log()
+        console.log("keys()")
+        var keys = await kvStore.keys()
+        console.log(keys)
 
         // for(const k of keys){
         //     console.log()
-        //     console.log(`get(${k})`)
-        //     console.log(await kvStore.get(k))
+        //     console.log(`delete(${k})`)
+        //     await kvStore.delete(k)
         // }
+
+        for(const k of keys){
+            console.log()
+            console.log(`get(${k})`)
+            console.log(await kvStore.get(k))
+        }
         
-        console.log()
-        console.log("delete()")
-        await kvStore.delete("key1")
+        // console.log()
+        // console.log("delete()")
+        // await kvStore.delete("key1")
 
         // console.log()
         // console.log("get() 2")
