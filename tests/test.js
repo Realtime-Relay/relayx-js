@@ -10,8 +10,11 @@ before(async () => {
         api_key: process.env.AUTH_JWT,
         secret: process.env.AUTH_SECRET
     });
-    await realTimeEnabled.init(true, {
-        debug: true
+    await realTimeEnabled.init({
+        staging: true,
+        opts: {
+            debug: true
+        }
     });
     await realTimeEnabled.connect();
 });
@@ -57,16 +60,18 @@ test('init() function test', async () => {
         api_key: process.env.AUTH_JWT,
         secret: process.env.AUTH_SECRET
     });
-    await realtime.init(true);
+    await realtime.init({ staging: true });
 
     assert.strictEqual(realtime.staging, true);
-    assert.deepStrictEqual(realtime.opts, {});
+    assert.strictEqual(realtime.opts, undefined);
 
     //---------------------------------------------------------------
 
     await realtime.init({
-        debug: true,
-        max_retries: 2
+        opts: {
+            debug: true,
+            max_retries: 2
+        }
     });
 
     assert.strictEqual(realtime.staging, false);
@@ -79,9 +84,12 @@ test('init() function test', async () => {
 
     //---------------------------------------------------------------
 
-    await realtime.init(true, {
-        debug: false,
-        max_retries: 2
+    await realtime.init({
+        staging: true,
+        opts: {
+            debug: false,
+            max_retries: 2
+        }
     });
 
     assert.strictEqual(realtime.staging, true);
@@ -94,23 +102,23 @@ test('init() function test', async () => {
 
     //---------------------------------------------------------------
 
-    await realtime.init(false);
+    await realtime.init({ staging: false });
 
     assert.strictEqual(realtime.staging, false);
-    assert.deepStrictEqual(realtime.opts, {})
+    assert.strictEqual(realtime.opts, undefined);
 
-    assert.strictEqual(realtime.opts.debug, undefined);
-    assert.strictEqual(realtime.opts.max_retries, undefined);
+    assert.strictEqual(realtime.opts?.debug, undefined);
+    assert.strictEqual(realtime.opts?.max_retries, undefined);
 
     //---------------------------------------------------------------
 
-    await realtime.init();
+    await realtime.init({});
 
     assert.strictEqual(realtime.staging, false);
-    assert.deepStrictEqual(realtime.opts, {})
+    assert.strictEqual(realtime.opts, undefined);
 
-    assert.strictEqual(realtime.opts.debug, undefined);
-    assert.strictEqual(realtime.opts.max_retries, undefined);
+    assert.strictEqual(realtime.opts?.debug, undefined);
+    assert.strictEqual(realtime.opts?.max_retries, undefined);
 });
 
 test("Namespace check test", async () => {
@@ -125,7 +133,9 @@ test("get publish retry count test based in init()", async () => {
     });
 
     await realtime.init({
-        max_retries: 2
+        opts: {
+            max_retries: 2
+        }
     });
 
     var publishRetryMethod = realtime.testGetPublishRetry();
@@ -137,7 +147,9 @@ test("get publish retry count test based in init()", async () => {
     //-----------------------------------------------------------------
 
     await realtime.init({
-        max_retries: 0
+        opts: {
+            max_retries: 0
+        }
     })
 
     attempts = publishRetryMethod();
@@ -147,7 +159,9 @@ test("get publish retry count test based in init()", async () => {
     //-----------------------------------------------------------------
 
     await realtime.init({
-        max_retries: -4
+        opts: {
+            max_retries: -4
+        }
     })
 
     attempts = publishRetryMethod();
@@ -157,7 +171,9 @@ test("get publish retry count test based in init()", async () => {
     //-----------------------------------------------------------------
 
     await realtime.init({
-        max_retries: 9
+        opts: {
+            max_retries: 9
+        }
     })
 
     attempts = await publishRetryMethod();

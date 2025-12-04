@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { initDNSSpoof } from "./dns_change.js";
 import { Queue } from "./queue.js";
 import { ErrorLogging } from "./utils.js";
+import { KVStore } from "./kv_storage.js";
 
 export class Realtime {
 
@@ -15,6 +16,8 @@ export class Realtime {
     #jetstream = null;
     #jetStreamManager = null;
     #consumerMap = {};
+
+    #kvStore = null;
 
     #event_func = {}; 
     #topicMap = []; 
@@ -76,59 +79,17 @@ export class Realtime {
     /*
     Initializes library with configuration options.
     */
-    async init(staging, opts){
-        /**
-         * Method can take in 2 variables
-         * @param{boolean} staging - Sets URL to staging or production URL
-         * @param{Object} opts - Library configuration options
-         */
-
+    async init(data){
         this.#errorLogging = new ErrorLogging();
 
-        var len = arguments.length;
-
-        if (len > 2){
-            new Error("Method takes only 2 variables, " + len + " given");
-        }
-
-        if (len == 2){
-            if(typeof arguments[0] == "boolean"){
-                staging = arguments[0]; 
-            }else{
-                staging = false;
-            }
-
-            if(arguments[1] instanceof Object){
-                opts = arguments[1];
-            }else{
-                opts = {};
-            }
-        }else if(len == 1){
-            if(arguments[0] instanceof Object){
-                opts = arguments[0];
-                staging = false;
-            }else if(typeof arguments[0] == "boolean"){
-                opts = {};
-                staging = arguments[0];
-                this.#log(staging)
-            }else{
-                opts = {};
-                staging = false
-            }
-        }else{
-            staging = false;
-            opts = {};
-        }
-
-        this.staging = staging; 
-        this.opts = opts;
+        this.staging = this.#checkVarOk(data.staging) && typeof data.staging == "boolean" ? data.staging : false; 
+        this.opts = data.opts;
 
         if(process.env.PROXY){
             this.#baseUrl = ["tls://api2.relay-x.io:8666"];
             initDNSSpoof();
         }else{
-            if (staging !== undefined || staging !== null){
-                this.#baseUrl = staging ? [
+            this.#baseUrl = this.staging ? [
                         "nats://0.0.0.0:4221",
                         "nats://0.0.0.0:4222",
                         "nats://0.0.0.0:4223",
@@ -138,17 +99,10 @@ export class Realtime {
                         `tls://api.relay-x.io:4222`,
                         `tls://api.relay-x.io:4223`
                     ];
-            }else{
-                this.#baseUrl = [
-                    `tls://api.relay-x.io:4221`,
-                    `tls://api.relay-x.io:4222`,
-                    `tls://api.relay-x.io:4223`
-                ];
-            }
         }
 
         this.#log(this.#baseUrl);
-        this.#log(opts);
+        this.#log(this.opts);
     }
 
     /**
@@ -778,6 +732,26 @@ export class Realtime {
         return initResult ? queue : null;
     }
 
+    // KV Functions
+    async initKVStore(){
+
+        if(this.#kvStore == null){
+            var debugCheck = this.opts.debug !== null && this.opts.debug !== undefined && typeof this.opts.debug == "boolean"
+
+            this.#kvStore = new KVStore({
+                namespace: this.namespace,
+                jetstream: this.#jetstream,
+                debug: debugCheck ? this.opts.debug : false
+            })
+
+            var init = await this.#kvStore.init()
+
+            return init ? this.#kvStore : null;
+        }else{
+            return this.#kvStore
+        }
+    }
+
     // Utility functions
     #getClientId(){
         return this.#natsClient?.info?.client_id
@@ -1051,6 +1025,10 @@ ${secret}
 *************************************************************`
     }
 
+    #checkVarOk(variable){
+        return variable !== null && variable !== undefined
+    }
+
     // Exposure for tests
     testRetryTillSuccess(){
         if(process.env.NODE_ENV == "test"){
@@ -1111,6 +1089,14 @@ ${secret}
     testPatternMatcher(){
         if(process.env.NODE_ENV == "test"){
             return this.#topicPatternMatcher.bind(this)
+        }else{
+            return null;
+        }
+    }
+
+    testGetJetstream(){
+        if(process.env.NODE_ENV == "test"){
+            return this.#jetstream;
         }else{
             return null;
         }

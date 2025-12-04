@@ -13,9 +13,12 @@ async function run(){
         api_key: process.env.AUTH_JWT,
         secret: process.env.AUTH_SECRET
     });
-    await realtime.init(true, {
-        max_retries: 2,
-        debug: true
+    await realtime.init({
+        staging: true, 
+        opts: {
+            max_retries: 2,
+            debug: true
+        }
     });
 
     queue = await realtime.initQueue("692adca3af5ed9d55e1b1ece");
@@ -26,6 +29,59 @@ async function run(){
         if(!connected){
             return;
         }
+
+        var kvStore = await realtime.initKVStore();
+        console.log(`KV Store => ${kvStore}`)
+
+        // console.log("Put()")
+        // await kvStore.put("key1", {
+        //     hey: "World!"
+        // })
+
+        // await kvStore.put("key2", [{
+        //     hey: "World!"
+        // }])
+
+        // await kvStore.put("key3", [123, 123, 123])
+
+        // await kvStore.put("key4", "hey!")
+
+        // await kvStore.put("key5", ["hey", "heyb"])
+
+        // await kvStore.put("key6", 123)
+
+        // await kvStore.put("key6", null)
+
+        // await kvStore.put("key7", undefined)
+
+        // await kvStore.put("key8", true)
+
+        // await kvStore.put("key9", false)
+
+        // await kvStore.put("key10", 10.123)
+
+        // console.log()
+        // console.log("get()")
+        // console.log(await kvStore.get("key1"))
+
+        // console.log()
+        // console.log("keys()")
+        // var keys = await kvStore.keys()
+        // console.log()
+
+        // for(const k of keys){
+        //     console.log()
+        //     console.log(`get(${k})`)
+        //     console.log(await kvStore.get(k))
+        // }
+        
+        console.log()
+        console.log("delete()")
+        await kvStore.delete("key1")
+
+        // console.log()
+        // console.log("get() 2")
+        // console.log(await kvStore.get("key1"))
 
         queue = await realtime.initQueue("692adca3af5ed9d55e1b1ece");
 

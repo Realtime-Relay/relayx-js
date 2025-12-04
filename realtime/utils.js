@@ -60,6 +60,30 @@ export class ErrorLogging {
                     })
 
                     throw new Error(`User is not permitted to subscribe to '${data.topic}'`)
+                }else if(userOp == "kv_write"){
+                    console.table({
+                        Event: "KV Write Failure",
+                        Description: `User is not permitted to write to KV Store`,
+                        "Docs to Solve Issue": "<>"
+                    })
+
+                    throw new Error(`User is not permitted to write to KV Store`)
+                }else if(userOp == "kv_read"){
+                    console.table({
+                        Event: "KV Read Failure",
+                        Description: `User is not permitted to read from KV Store`,
+                        "Docs to Solve Issue": "<>"
+                    })
+
+                    throw new Error(`User is not permitted to read from KV Store`)
+                }else if(userOp == "kv_delete"){
+                    console.table({
+                        Event: "KV Key Delete Failure",
+                        Description: `User is not permitted to delete key from KV Store`,
+                        "Docs to Solve Issue": "<>"
+                    })
+
+                    throw new Error(`User is not permitted to delete key from KV Store`)
                 }
             }else if(code == "AUTHORIZATION_VIOLATION"){
                 console.table({
@@ -68,6 +92,22 @@ export class ErrorLogging {
                     "Docs to Solve Issue": "<>"
                 })
             }
+        }
+    }
+
+}
+
+export class Logging {
+
+    #debug = false;
+
+    constructor(debug){
+        this.#debug = debug !== null && debug !== undefined && typeof debug == "boolean" ? debug : false;
+    }
+
+    log(...msg){
+        if(this.#debug){
+            console.log(...msg)
         }
     }
 
