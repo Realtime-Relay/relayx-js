@@ -82,8 +82,8 @@ export class Realtime {
     async init(data){
         this.#errorLogging = new ErrorLogging();
 
-        this.staging = this.#checkVarOk(data.staging) && typeof data.staging == "boolean" ? data.staging : false; 
-        this.opts = data.opts;
+        this.staging = this.#checkVarOk(data?.staging) && typeof data?.staging == "boolean" ? data.staging : false; 
+        this.opts = this.#checkVarOk(data?.opts) ? data.opts : {};
 
         if(process.env.PROXY){
             this.#baseUrl = ["tls://api2.relay-x.io:8666"];
