@@ -63,7 +63,7 @@ test('init() function test', async () => {
     await realtime.init({ staging: true });
 
     assert.strictEqual(realtime.staging, true);
-    assert.strictEqual(realtime.opts, undefined);
+    assert.deepStrictEqual(realtime.opts, {});
 
     //---------------------------------------------------------------
 
@@ -105,7 +105,7 @@ test('init() function test', async () => {
     await realtime.init({ staging: false });
 
     assert.strictEqual(realtime.staging, false);
-    assert.strictEqual(realtime.opts, undefined);
+    assert.deepStrictEqual(realtime.opts, {});
 
     assert.strictEqual(realtime.opts?.debug, undefined);
     assert.strictEqual(realtime.opts?.max_retries, undefined);
@@ -115,7 +115,17 @@ test('init() function test', async () => {
     await realtime.init({});
 
     assert.strictEqual(realtime.staging, false);
-    assert.strictEqual(realtime.opts, undefined);
+    assert.deepStrictEqual(realtime.opts, {});
+
+    assert.strictEqual(realtime.opts?.debug, undefined);
+    assert.strictEqual(realtime.opts?.max_retries, undefined);
+
+    //---------------------------------------------------------------
+
+    await realtime.init();
+
+    assert.strictEqual(realtime.staging, false);
+    assert.deepStrictEqual(realtime.opts, {});
 
     assert.strictEqual(realtime.opts?.debug, undefined);
     assert.strictEqual(realtime.opts?.max_retries, undefined);
