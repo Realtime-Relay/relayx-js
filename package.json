@@ -1,6 +1,6 @@
 {
   "name": "relayx-js",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "main": "realtime/realtime.js",
   "type": "module",
   "scripts": {
